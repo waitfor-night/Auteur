@@ -1,0 +1,29 @@
+__pycache__/
+*.py[cod]
+*$py.class
+rawdata/
+.env
+workspace/
+logs/
+videoAssistant_Test.py
+
+# 根目录测试产物
+output*.mp4
+output*.jpg
+
+paper/
+.python-version
+skills/SKILL_*.md
+
+# 运行时数据
+context/
+tmp/
+trace-and-log/
+publish_log.json
+.claude/scheduled_tasks.lock
+
+# submodule 生成物
+social-auto-upload/cookies/
+xiaohongshu-mcp/xiaohongshu-mcp
+xiaohongshu-mcp/cookies.json
+scripts/

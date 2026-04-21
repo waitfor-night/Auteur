@@ -1,0 +1,6 @@
+[submodule "social-auto-upload"]
+	path = social-auto-upload
+	url = git@github.com:dreammis/social-auto-upload.git
+[submodule "xiaohongshu-mcp"]
+	path = xiaohongshu-mcp
+	url = https://github.com/xpzouying/xiaohongshu-mcp.git

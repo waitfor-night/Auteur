@@ -1,0 +1,792 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MoMo Dashboard · zhaili</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+/* ── reset & vars ── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg:       #0d1117;
+  --panel:    #161b22;
+  --border:   #21262d;
+  --border2:  #30363d;
+  --text:     #c9d1d9;
+  --muted:    #8b949e;
+  --accent:   #58a6ff;
+  --success:  #3fb950;
+  --error:    #f85149;
+  --warn:     #d29922;
+  --douyin:   #fe2c55;
+  --bilibili: #fb7299;
+  --kuaishou: #ff6b00;
+  --xhs:      #ff2442;
+  --skill-bg: #1c2128;
+  --radius:   6px;
+  --header-h: 52px;
+}
+html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: var(--bg); color: var(--text); font-size: 13px; }
+
+/* ── layout ── */
+header {
+  position: fixed; top: 0; left: 0; right: 0; height: var(--header-h);
+  background: var(--panel); border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; padding: 0 20px; gap: 12px; z-index: 100;
+}
+.logo { font-weight: 700; font-size: 15px; letter-spacing: .5px; color: #e6edf3; }
+.logo span { color: var(--accent); }
+.user-badge {
+  background: #21262d; border: 1px solid var(--border2); border-radius: 20px;
+  padding: 3px 10px; font-size: 12px; color: var(--muted);
+}
+.spacer { flex: 1; }
+#refresh-btn {
+  background: #21262d; border: 1px solid var(--border2); border-radius: var(--radius);
+  color: var(--text); cursor: pointer; padding: 5px 14px; font-size: 12px;
+  display: flex; align-items: center; gap: 6px; transition: background .15s;
+}
+#refresh-btn:hover { background: #30363d; }
+#refresh-btn.spinning .icon { display: inline-block; animation: spin .7s linear infinite; }
+.last-refresh { font-size: 11px; color: var(--muted); }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+main {
+  display: flex; height: calc(100vh - var(--header-h)); margin-top: var(--header-h);
+}
+
+/* ── episode list ── */
+#ep-list {
+  width: 320px; min-width: 260px; flex-shrink: 0;
+  border-right: 1px solid var(--border); overflow-y: auto;
+  background: var(--panel);
+}
+.ep-list-header {
+  padding: 10px 12px 8px; font-size: 11px; font-weight: 600;
+  color: var(--muted); text-transform: uppercase; letter-spacing: .8px;
+  border-bottom: 1px solid var(--border); position: sticky; top: 0;
+  background: var(--panel); z-index: 10;
+  display: flex; align-items: center; gap: 8px;
+}
+.filter-btn {
+  margin-left: auto; font-size: 10px; font-weight: 600; text-transform: none;
+  letter-spacing: 0; padding: 3px 8px; border-radius: 20px; cursor: pointer;
+  border: 1px solid var(--border2); background: transparent; color: var(--muted);
+  transition: all .15s; white-space: nowrap;
+}
+.filter-btn:hover { border-color: var(--accent); color: var(--accent); }
+.filter-btn.active { background: #1f3244; border-color: #388bfd; color: var(--accent); }
+.ep-item {
+  padding: 12px 16px; border-bottom: 1px solid var(--border);
+  cursor: pointer; transition: background .1s;
+}
+.ep-item:hover { background: #1c2128; }
+.ep-item.active { background: #1c2128; border-left: 3px solid var(--accent); padding-left: 13px; }
+.ep-item-head { display: flex; align-items: center; gap: 6px; margin-bottom: 5px; }
+.status-dot {
+  width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0;
+}
+.status-dot.completed { background: var(--success); }
+.status-dot.failed, .status-dot.error { background: var(--error); }
+.status-dot.unknown, .status-dot.running { background: var(--warn); }
+.ep-time { font-size: 11px; color: var(--muted); margin-left: auto; white-space: nowrap; }
+.ep-instruction {
+  font-size: 12px; color: var(--text); line-height: 1.5;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  overflow: hidden; margin-bottom: 6px;
+}
+.ep-meta-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.skill-badge {
+  background: #1f3244; color: #79c0ff; border-radius: 4px;
+  padding: 1px 6px; font-size: 10px; font-weight: 600; letter-spacing: .3px;
+}
+.platform-dot {
+  width: 6px; height: 6px; border-radius: 50%; display: inline-block;
+}
+.platform-dot.douyin   { background: var(--douyin); }
+.platform-dot.bilibili { background: var(--bilibili); }
+.platform-dot.kuaishou { background: var(--kuaishou); }
+.platform-dot.xiaohongshu { background: var(--xhs); }
+.published-label { font-size: 10px; color: var(--success); }
+.duration-label { font-size: 10px; color: var(--muted); }
+
+/* ── detail panel ── */
+#detail {
+  flex: 1; overflow-y: auto; padding: 24px 28px;
+  background: var(--bg);
+}
+.placeholder {
+  height: 100%; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; color: var(--muted);
+  gap: 10px;
+}
+.placeholder .arrow { font-size: 32px; }
+
+/* ── section headers ── */
+.section { margin-bottom: 28px; }
+.section-title {
+  font-size: 11px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: .8px; color: var(--muted); margin-bottom: 12px;
+  display: flex; align-items: center; gap: 8px;
+}
+.section-title::after {
+  content: ''; flex: 1; height: 1px; background: var(--border);
+}
+
+/* ── ep header ── */
+.ep-header { margin-bottom: 20px; }
+.ep-header-instruction {
+  font-size: 14px; line-height: 1.6; color: #e6edf3; margin-bottom: 10px;
+}
+.ep-header-meta { display: flex; gap: 16px; flex-wrap: wrap; }
+.meta-chip {
+  display: flex; align-items: center; gap: 5px;
+  background: var(--panel); border: 1px solid var(--border);
+  border-radius: 20px; padding: 3px 10px; font-size: 11px;
+}
+.meta-chip .label { color: var(--muted); }
+.meta-chip .value { color: var(--text); }
+.chip-status.completed { color: var(--success); }
+.chip-status.failed    { color: var(--error); }
+
+/* ── stages ── */
+.stages-row { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 6px; }
+.stage-card {
+  background: var(--panel); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 8px 12px; font-size: 12px;
+}
+.stage-card .stage-name { color: #e6edf3; margin-bottom: 3px; }
+.stage-card .stage-skill { color: var(--accent); font-size: 11px; }
+.stage-card .stage-status { font-size: 10px; margin-top: 4px; }
+.stage-card .stage-status.completed { color: var(--success); }
+.stage-card .stage-status.failed    { color: var(--error); }
+.stage-card .stage-status.pending   { color: var(--warn); }
+
+/* ── tool call gantt ── */
+.gantt-wrap { overflow-x: auto; }
+.gantt-axis {
+  display: flex; align-items: center; margin-bottom: 6px; padding-left: 180px;
+}
+.gantt-axis-labels {
+  flex: 1; display: flex; justify-content: space-between;
+  font-size: 10px; color: var(--muted);
+}
+.gantt-row {
+  display: flex; align-items: center; min-height: 28px; margin-bottom: 3px;
+  border-radius: 4px; transition: background .1s; cursor: pointer;
+}
+.gantt-row:hover { background: #1c2128; }
+.gantt-row.expanded { background: #1c2128; }
+.gantt-label {
+  width: 180px; min-width: 180px; font-size: 11px; padding: 0 10px 0 0;
+  display: flex; align-items: center; gap: 6px; overflow: hidden;
+}
+.gantt-tool-name {
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  color: var(--text);
+}
+.gantt-track {
+  flex: 1; height: 24px; position: relative;
+  background: #161b22; border-radius: 3px;
+}
+.gantt-bar {
+  position: absolute; height: 100%; border-radius: 3px; min-width: 3px;
+  transition: opacity .1s;
+}
+.gantt-bar.success  { background: #238636; }
+.gantt-bar.error    { background: #da3633; }
+.gantt-bar.unknown  { background: #6e7681; }
+.gantt-row:hover .gantt-bar { opacity: .85; }
+.gantt-dur {
+  width: 56px; min-width: 56px; text-align: right; padding: 0 0 0 8px;
+  font-size: 10px; color: var(--muted); font-family: monospace;
+}
+.gantt-status-icon { font-size: 11px; width: 16px; text-align: center; }
+
+/* ── tool detail drawer ── */
+.tool-detail {
+  display: none; background: #0d1117; border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 10px 14px; margin: 2px 0 6px 180px;
+  font-size: 11px; line-height: 1.7;
+}
+.tool-detail.open { display: block; }
+.tool-detail-row { display: flex; gap: 8px; margin-bottom: 4px; }
+.tool-detail-key { color: var(--muted); min-width: 80px; flex-shrink: 0; }
+.tool-detail-val { color: var(--text); word-break: break-word; font-family: monospace; }
+.tool-detail-val.error { color: var(--error); }
+
+/* ── platform cards ── */
+.platform-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px; margin-bottom: 20px; }
+.platform-card {
+  background: var(--panel); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 14px 16px;
+}
+.platform-card-header {
+  display: flex; align-items: center; gap: 8px; margin-bottom: 12px;
+}
+.platform-icon {
+  width: 26px; height: 26px; border-radius: 6px; display: flex;
+  align-items: center; justify-content: center; font-size: 13px; font-weight: 700;
+  flex-shrink: 0;
+}
+.platform-icon.douyin   { background: #200c13; color: var(--douyin); }
+.platform-icon.bilibili { background: #1a0d14; color: var(--bilibili); }
+.platform-icon.kuaishou { background: #1e1200; color: var(--kuaishou); }
+.platform-icon.xiaohongshu { background: #200510; color: var(--xhs); }
+.platform-name { font-size: 13px; font-weight: 600; color: #e6edf3; }
+.platform-post-title {
+  font-size: 11px; color: var(--muted); margin-bottom: 10px;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  overflow: hidden; line-height: 1.5;
+}
+.stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.stat-item { }
+.stat-val { font-size: 18px; font-weight: 700; color: #e6edf3; line-height: 1.2; }
+.stat-label { font-size: 10px; color: var(--muted); margin-top: 1px; }
+.last-updated { font-size: 10px; color: var(--muted); margin-top: 10px; }
+
+/* ── trends chart ── */
+.metric-tabs { display: flex; gap: 6px; margin-bottom: 12px; flex-wrap: wrap; }
+.metric-tab {
+  background: var(--panel); border: 1px solid var(--border);
+  border-radius: 20px; padding: 4px 12px; font-size: 11px;
+  cursor: pointer; color: var(--muted); transition: all .15s;
+}
+.metric-tab:hover { border-color: var(--border2); color: var(--text); }
+.metric-tab.active { background: #1f3244; border-color: #388bfd; color: var(--accent); }
+.chart-container { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; }
+
+/* ── comments ── */
+.comments-section { margin-top: 20px; }
+.platform-comments { margin-bottom: 14px; }
+.platform-comments-header {
+  display: flex; align-items: center; gap: 8px; cursor: pointer;
+  padding: 8px 0; font-size: 12px; font-weight: 600; color: var(--text);
+  border-bottom: 1px solid var(--border); user-select: none;
+}
+.platform-comments-header .toggle { color: var(--muted); font-size: 10px; }
+.comments-list { padding: 8px 0; }
+.comment-item {
+  padding: 8px 12px; border-left: 2px solid var(--border);
+  margin: 6px 0; font-size: 12px; line-height: 1.6;
+}
+.comment-item .comment-author { color: var(--accent); font-weight: 600; margin-right: 6px; }
+.comment-item .comment-time { color: var(--muted); font-size: 10px; margin-left: 6px; }
+.comment-item .comment-content { color: var(--text); }
+.sub-comment { margin-left: 16px; border-left-color: var(--border2); }
+.no-comments { color: var(--muted); font-size: 11px; padding: 8px 0; }
+
+/* ── scrollbar ── */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #30363d; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #484f58; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">Mo<span>Mo</span> Dashboard</div>
+  <div class="user-badge" id="user-badge">…</div>
+  <div class="spacer"></div>
+  <span class="last-refresh" id="last-refresh"></span>
+  <button id="refresh-btn" onclick="refreshAll()">
+    <span class="icon">↺</span> 刷新
+  </button>
+</header>
+
+<main>
+  <div id="ep-list">
+    <div class="ep-list-header">
+      视频生成记录
+      <button class="filter-btn" id="filter-btn" onclick="toggleFilter()">✓ 已发布</button>
+    </div>
+    <div id="ep-items"></div>
+  </div>
+  <div id="detail">
+    <div class="placeholder" id="placeholder">
+      <div class="arrow">←</div>
+      <div>从左侧选择一个视频查看详情</div>
+    </div>
+    <div id="detail-content" style="display:none"></div>
+  </div>
+</main>
+
+<script>
+// ── state ──────────────────────────────────────────────────────────────────
+let episodes = [];
+let selectedEpId = null;
+let filterPublished = false;
+let trendsChart = null;
+let activeMetric = 'liked_count';
+
+const PLATFORM_META = {
+  douyin:      { name: '抖音',  icon: '抖', cls: 'douyin'   },
+  bilibili:    { name: 'B站',   icon: 'B',  cls: 'bilibili' },
+  kuaishou:    { name: '快手',  icon: '快', cls: 'kuaishou' },
+  xiaohongshu: { name: '小红书',icon: '红', cls: 'xiaohongshu' },
+};
+
+const METRIC_LABELS = {
+  liked_count:     { label: '点赞', icon: '♥' },
+  view_count:      { label: '播放', icon: '▶' },
+  comment_count:   { label: '评论', icon: '💬' },
+  share_count:     { label: '分享', icon: '↗' },
+  collected_count: { label: '收藏', icon: '★' },
+};
+
+const PLATFORM_COLORS = {
+  douyin:      '#fe2c55',
+  bilibili:    '#fb7299',
+  kuaishou:    '#ff6b00',
+  xiaohongshu: '#ff2442',
+};
+
+// ── utils ──────────────────────────────────────────────────────────────────
+function fmtDur(sec) {
+  if (sec == null) return '—';
+  if (sec < 60) return sec.toFixed(1) + 's';
+  const m = Math.floor(sec / 60), s = Math.round(sec % 60);
+  return m + 'm' + (s > 0 ? s + 's' : '');
+}
+
+function fmtTime(iso) {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  const mo = String(d.getMonth()+1).padStart(2,'0');
+  const dd = String(d.getDate()).padStart(2,'0');
+  const hh = String(d.getHours()).padStart(2,'0');
+  const mm = String(d.getMinutes()).padStart(2,'0');
+  return `${mo}-${dd} ${hh}:${mm}`;
+}
+
+function fmtToolDur(sec) {
+  if (sec == null || sec === 0) return '<1ms';
+  if (sec < 0.001) return '<1ms';
+  if (sec < 1) return (sec * 1000).toFixed(0) + 'ms';
+  return sec.toFixed(2) + 's';
+}
+
+function esc(str) {
+  return String(str)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ── load episodes ──────────────────────────────────────────────────────────
+async function loadEpisodes() {
+  const res = await fetch('/api/episodes');
+  episodes = await res.json();
+  renderEpList();
+}
+
+function toggleFilter() {
+  filterPublished = !filterPublished;
+  const btn = document.getElementById('filter-btn');
+  btn.classList.toggle('active', filterPublished);
+  renderEpList();
+}
+
+function renderEpList() {
+  const container = document.getElementById('ep-items');
+  const visible = filterPublished ? episodes.filter(e => e.has_publish) : episodes;
+  if (!visible.length) {
+    container.innerHTML = '<div style="padding:20px;color:var(--muted);text-align:center">暂无数据</div>';
+    return;
+  }
+  container.innerHTML = visible.map(ep => {
+    const active = ep.episode_id === selectedEpId ? ' active' : '';
+    const dotCls = ep.status || 'unknown';
+    const platforms = (ep.published_platforms || []).map(p =>
+      `<span class="platform-dot ${p}" title="${PLATFORM_META[p]?.name||p}"></span>`
+    ).join('');
+    const publishedLabel = ep.has_publish
+      ? `<span class="published-label">✓ 已发布</span>${platforms}`
+      : '';
+    const skillBadge = ep.skill_type
+      ? `<span class="skill-badge">${ep.skill_type}</span>`
+      : '';
+    const dur = ep.duration_sec != null ? `<span class="duration-label">${fmtDur(ep.duration_sec)}</span>` : '';
+    return `
+      <div class="ep-item${active}" onclick="selectEp('${esc(ep.episode_id)}')">
+        <div class="ep-item-head">
+          <span class="status-dot ${dotCls}"></span>
+          <span style="font-size:11px;color:var(--muted);font-family:monospace">${ep.episode_id.slice(-12)}</span>
+          <span class="ep-time">${fmtTime(ep.start_time)}</span>
+        </div>
+        <div class="ep-instruction">${esc(ep.instruction)}</div>
+        <div class="ep-meta-row">${skillBadge}${dur}${publishedLabel}</div>
+      </div>`;
+  }).join('');
+}
+
+// ── select episode ─────────────────────────────────────────────────────────
+async function selectEp(epId) {
+  selectedEpId = epId;
+  renderEpList(); // update active state
+
+  const res = await fetch(`/api/episode/${epId}`);
+  const data = await res.json();
+  if (data.error) return;
+
+  document.getElementById('placeholder').style.display = 'none';
+  const content = document.getElementById('detail-content');
+  content.style.display = 'block';
+  content.innerHTML = buildDetailHTML(data);
+
+  // render gantt after DOM is ready
+  renderGantt(data.tool_calls, data.meta_info.duration_sec);
+
+  // render charts if published
+  if (data.publish_data) {
+    renderTrendsChart(data.publish_data, activeMetric);
+  }
+}
+
+// ── build detail HTML ──────────────────────────────────────────────────────
+function buildDetailHTML(data) {
+  const m = data.meta_info;
+  const statusCls = m.status || 'unknown';
+
+  // meta chips
+  const chips = [
+    `<div class="meta-chip"><span class="label">状态</span><span class="value chip-status ${statusCls}">${m.status || '—'}</span></div>`,
+    `<div class="meta-chip"><span class="label">开始</span><span class="value">${fmtTime(m.start_time)}</span></div>`,
+    `<div class="meta-chip"><span class="label">耗时</span><span class="value">${fmtDur(m.duration_sec)}</span></div>`,
+    m.time_length ? `<div class="meta-chip"><span class="label">目标时长</span><span class="value">${m.time_length}s</span></div>` : '',
+  ].join('');
+
+  // stages
+  const stagesHTML = (data.stages || []).map((s, i) => `
+    <div class="stage-card">
+      <div class="stage-name">Stage ${s.stage_id}: ${esc(s.stage_name || '')}</div>
+      <div class="stage-skill">${esc(s.skill_type || '')}</div>
+      <div class="stage-status ${s.status || ''}">${s.status || ''}</div>
+    </div>`
+  ).join('');
+
+  // tool call rows (gantt rendered separately via JS)
+  const toolRowsHTML = (data.tool_calls || []).map((tc, i) => `
+    <div class="gantt-row" onclick="toggleToolDetail(${i})" id="gantt-row-${i}">
+      <div class="gantt-label">
+        <span class="gantt-status-icon">${tc.status === 'success' ? '✓' : tc.status === 'error' ? '✗' : '·'}</span>
+        <span class="gantt-tool-name" title="${esc(tc.tool_name)}">${esc(tc.tool_name)}</span>
+      </div>
+      <div class="gantt-track" id="gantt-track-${i}">
+        <!-- bar injected by renderGantt() -->
+      </div>
+      <div class="gantt-dur">${fmtToolDur(tc.duration)}</div>
+    </div>
+    <div class="tool-detail" id="tool-detail-${i}">
+      ${tc.inputs_summary ? `<div class="tool-detail-row"><span class="tool-detail-key">入参</span><span class="tool-detail-val">${esc(tc.inputs_summary)}</span></div>` : ''}
+      ${tc.outputs_summary ? `<div class="tool-detail-row"><span class="tool-detail-key">输出</span><span class="tool-detail-val">${esc(tc.outputs_summary)}</span></div>` : ''}
+      ${tc.error_msg ? `<div class="tool-detail-row"><span class="tool-detail-key">错误</span><span class="tool-detail-val error">${esc(tc.error_msg)}</span></div>` : ''}
+      <div class="tool-detail-row"><span class="tool-detail-key">时间</span><span class="tool-detail-val">${esc(tc.timestamp)} (+${tc.offset_sec}s)</span></div>
+    </div>`
+  ).join('');
+
+  // final output (if any)
+  const finalOut = m.final_output
+    ? `<div style="margin-top:8px;padding:8px 12px;background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);font-size:11px;color:var(--muted);font-family:monospace">${esc(m.final_output)}</div>`
+    : '';
+
+  // social media section
+  let socialHTML = '';
+  if (data.publish_data) {
+    socialHTML = buildSocialHTML(data.publish_data);
+  }
+
+  return `
+    <div class="ep-header">
+      <div class="ep-header-instruction">${esc(m.instruction)}</div>
+      <div class="ep-header-meta">${chips}</div>
+      ${finalOut}
+    </div>
+
+    <div class="section">
+      <div class="section-title">执行计划</div>
+      <div class="stages-row">${stagesHTML || '<span style="color:var(--muted);font-size:12px">无</span>'}</div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">工具调用时间线 <span style="font-size:10px;font-weight:400;color:var(--muted)">(${data.tool_calls.length} 次调用 · 点击展开详情)</span></div>
+      <div class="gantt-wrap">
+        <div class="gantt-axis">
+          <div class="gantt-axis-labels" id="gantt-axis-labels"></div>
+        </div>
+        <div id="gantt-rows">${toolRowsHTML}</div>
+      </div>
+    </div>
+
+    ${socialHTML}`;
+}
+
+// ── gantt rendering ────────────────────────────────────────────────────────
+function renderGantt(toolCalls, totalDur) {
+  if (!toolCalls || !toolCalls.length) return;
+
+  // total span: max of (last offset + duration) vs episode duration
+  let maxT = totalDur || 0;
+  for (const tc of toolCalls) {
+    const end = tc.offset_sec + (tc.duration || 0);
+    if (end > maxT) maxT = end;
+  }
+  if (maxT <= 0) maxT = 1;
+
+  // axis labels
+  const axisEl = document.getElementById('gantt-axis-labels');
+  if (axisEl) {
+    const steps = 5;
+    const labels = Array.from({length: steps + 1}, (_, i) =>
+      `<span>${fmtDur(maxT * i / steps)}</span>`
+    ).join('');
+    axisEl.innerHTML = labels;
+  }
+
+  // bars
+  for (let i = 0; i < toolCalls.length; i++) {
+    const tc = toolCalls[i];
+    const track = document.getElementById(`gantt-track-${i}`);
+    if (!track) continue;
+    const leftPct = (tc.offset_sec / maxT) * 100;
+    const widthPct = Math.max((tc.duration / maxT) * 100, 0.4);
+    const statusCls = tc.status === 'success' ? 'success' : tc.status === 'error' ? 'error' : 'unknown';
+    const bar = document.createElement('div');
+    bar.className = `gantt-bar ${statusCls}`;
+    bar.style.left = leftPct + '%';
+    bar.style.width = widthPct + '%';
+    bar.title = `${tc.tool_name}\n+${tc.offset_sec}s  dur=${fmtToolDur(tc.duration)}`;
+    track.appendChild(bar);
+  }
+}
+
+function toggleToolDetail(i) {
+  const el = document.getElementById(`tool-detail-${i}`);
+  const row = document.getElementById(`gantt-row-${i}`);
+  if (!el) return;
+  const open = el.classList.toggle('open');
+  row.classList.toggle('expanded', open);
+}
+
+// ── social media HTML ──────────────────────────────────────────────────────
+function buildSocialHTML(pub) {
+  const platforms = pub.platforms || {};
+  const pubPlatforms = pub.published_platforms || Object.keys(platforms);
+
+  // platform cards
+  const cards = pubPlatforms.map(p => {
+    const pd = platforms[p] || {};
+    const meta = PLATFORM_META[p] || { name: p, icon: p[0], cls: p };
+    const stats = pd.stats || {};
+    const statsItems = Object.entries(METRIC_LABELS)
+      .filter(([k]) => stats[k] != null)
+      .map(([k, ml]) => `
+        <div class="stat-item">
+          <div class="stat-val">${(stats[k] ?? 0).toLocaleString()}</div>
+          <div class="stat-label">${ml.icon} ${ml.label}</div>
+        </div>`
+      ).join('');
+    const lastUpd = pd.last_updated ? `<div class="last-updated">更新：${pd.last_updated}</div>` : '';
+    const title = pd.title ? `<div class="platform-post-title">${esc(pd.title)}</div>` : '';
+    return `
+      <div class="platform-card">
+        <div class="platform-card-header">
+          <div class="platform-icon ${meta.cls}">${meta.icon}</div>
+          <div class="platform-name">${meta.name}</div>
+        </div>
+        ${title}
+        <div class="stat-grid">${statsItems}</div>
+        ${lastUpd}
+      </div>`;
+  }).join('');
+
+  // metric selector tabs
+  const metricTabs = Object.entries(METRIC_LABELS).map(([k, ml]) => `
+    <div class="metric-tab${k === activeMetric ? ' active' : ''}" onclick="switchMetric('${k}', this)">
+      ${ml.icon} ${ml.label}
+    </div>`
+  ).join('');
+
+  // comments
+  const commentsHTML = pubPlatforms.map(p => {
+    const pd = platforms[p] || {};
+    const comments = pd.stats?.comments || [];
+    const meta = PLATFORM_META[p] || { name: p, cls: p };
+    const commList = comments.length
+      ? comments.map(c => buildCommentHTML(c)).join('')
+      : `<div class="no-comments">暂无评论</div>`;
+    return `
+      <div class="platform-comments">
+        <div class="platform-comments-header" onclick="toggleComments(this)">
+          <span class="platform-dot ${meta.cls}"></span>
+          ${meta.name} · ${comments.length} 条评论
+          <span class="spacer" style="flex:1"></span>
+          <span class="toggle">▼</span>
+        </div>
+        <div class="comments-list" style="display:none">${commList}</div>
+      </div>`;
+  }).join('');
+
+  return `
+    <div class="section">
+      <div class="section-title">社媒数据</div>
+      <div class="platform-grid">${cards}</div>
+
+      <div class="section-title" style="margin-top:20px">指标趋势</div>
+      <div class="metric-tabs">${metricTabs}</div>
+      <div class="chart-container">
+        <canvas id="trends-chart" height="90"></canvas>
+      </div>
+
+      <div class="section-title" style="margin-top:20px">评论</div>
+      <div class="comments-section">${commentsHTML}</div>
+    </div>`;
+}
+
+function buildCommentHTML(c, isSub) {
+  const subCls = isSub ? ' sub-comment' : '';
+  const subs = (c.sub_comments || []).map(sc => buildCommentHTML(sc, true)).join('');
+  return `
+    <div class="comment-item${subCls}">
+      <span class="comment-author">${esc(c.author || '匿名')}</span>
+      <span class="comment-content">${esc(c.content || '')}</span>
+      <span class="comment-time">${c.create_time || ''}</span>
+      ${subs}
+    </div>`;
+}
+
+function toggleComments(header) {
+  const list = header.nextElementSibling;
+  const toggle = header.querySelector('.toggle');
+  const open = list.style.display === 'none';
+  list.style.display = open ? 'block' : 'none';
+  toggle.textContent = open ? '▲' : '▼';
+}
+
+// ── trends chart ───────────────────────────────────────────────────────────
+function fmtAxisLabel(ts) {
+  // "2026-04-20 13:13:10" → "04-20 13:13"
+  if (!ts || ts.length < 16) return ts || '';
+  return ts.slice(5, 16);
+}
+
+function renderTrendsChart(pub, metric) {
+  const canvas = document.getElementById('trends-chart');
+  if (!canvas) return;
+
+  if (trendsChart) { trendsChart.destroy(); trendsChart = null; }
+
+  const platforms = pub.platforms || {};
+
+  // Step 1: build per-platform value maps  { observed_at → metric_value }
+  const platformMaps = {};
+  for (const [p, pd] of Object.entries(platforms)) {
+    const map = {};
+    for (const h of (pd.stats_history || [])) {
+      if (h.observed_at) map[h.observed_at] = h[metric] ?? 0;
+    }
+    // add last_updated / stats as final point if not already in history
+    if (pd.stats && pd.last_updated && !(pd.last_updated in map)) {
+      map[pd.last_updated] = pd.stats[metric] ?? 0;
+    }
+    if (Object.keys(map).length) platformMaps[p] = map;
+  }
+
+  if (!Object.keys(platformMaps).length) {
+    canvas.parentElement.innerHTML =
+      '<div style="color:var(--muted);font-size:12px;text-align:center;padding:20px">暂无历史数据</div>';
+    return;
+  }
+
+  // Step 2: merge & sort all unique timestamps across platforms
+  const allTs = [...new Set(
+    Object.values(platformMaps).flatMap(m => Object.keys(m))
+  )].sort();
+
+  // Step 3: build datasets — null for timestamps where a platform has no observation
+  const datasets = Object.entries(platformMaps).map(([p, map]) => ({
+    label: PLATFORM_META[p]?.name || p,
+    data: allTs.map(t => t in map ? map[t] : null),
+    borderColor: PLATFORM_COLORS[p] || '#888',
+    backgroundColor: (PLATFORM_COLORS[p] || '#888') + '22',
+    tension: 0.3,
+    pointRadius: 4,
+    pointHoverRadius: 6,
+    fill: false,
+    spanGaps: true,   // connect line across null gaps
+  }));
+
+  trendsChart = new Chart(canvas, {
+    type: 'line',
+    data: {
+      labels: allTs.map(fmtAxisLabel),
+      datasets,
+    },
+    options: {
+      responsive: true,
+      plugins: {
+        legend: { labels: { color: '#8b949e', font: { size: 11 } } },
+        tooltip: {
+          callbacks: {
+            title: items => allTs[items[0]?.dataIndex] || '',
+            label: item => {
+              const v = item.raw;
+              return ` ${item.dataset.label}: ${v == null ? '—' : v}`;
+            },
+          }
+        }
+      },
+      scales: {
+        x: {
+          ticks: { color: '#8b949e', font: { size: 10 }, maxRotation: 35 },
+          grid: { color: '#21262d' },
+        },
+        y: {
+          beginAtZero: true,
+          ticks: { color: '#8b949e', font: { size: 10 }, precision: 0 },
+          grid: { color: '#21262d' },
+        }
+      }
+    }
+  });
+}
+
+function switchMetric(metric, tab) {
+  activeMetric = metric;
+  document.querySelectorAll('.metric-tab').forEach(t => t.classList.remove('active'));
+  tab.classList.add('active');
+  // re-render chart with current episode's publish data
+  const ep = episodes.find(e => e.episode_id === selectedEpId);
+  if (ep && ep.has_publish) {
+    fetch(`/api/episode/${selectedEpId}`)
+      .then(r => r.json())
+      .then(d => { if (d.publish_data) renderTrendsChart(d.publish_data, metric); });
+  }
+}
+
+// ── refresh ────────────────────────────────────────────────────────────────
+async function refreshAll() {
+  const btn = document.getElementById('refresh-btn');
+  btn.classList.add('spinning');
+  btn.disabled = true;
+  try {
+    await loadEpisodes();
+    if (selectedEpId) await selectEp(selectedEpId);
+    const now = new Date();
+    document.getElementById('last-refresh').textContent =
+      `最后刷新 ${now.getHours()}:${String(now.getMinutes()).padStart(2,'0')}`;
+  } finally {
+    btn.classList.remove('spinning');
+    btn.disabled = false;
+  }
+}
+
+// ── init ───────────────────────────────────────────────────────────────────
+fetch('/api/config')
+  .then(r => r.json())
+  .then(c => { document.getElementById('user-badge').textContent = c.username; });
+loadEpisodes();
+</script>
+</body>
+</html>

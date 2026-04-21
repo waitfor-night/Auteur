@@ -1,0 +1,176 @@
+# 5 个虚拟形象：每人有独立创作逻辑与习惯，用于优化前后对比实验。
+# 任务列表通过 config/tasks/<role_id>.txt 传入（每行一个任务，共 10 个）。
+# role_id 可作为 username，对应 workspace/<username>/ 与 SKILL_<username>.md。
+# expected_tool_order / golden_tool_sequence / preferred_tools 均与 tools.py 中工具名一致。
+
+roles:
+  # 1. 严谨考据派纪录片创作者
+  doc_rigorous:
+    role_id: doc_rigorous
+    persona_name: 严谨考据派纪录片创作者
+    persona_prompt: |
+      你是专注历史与纪录片创作的创作者，非常在意考据严谨。
+      在生成历史相关长故事视频时，你要求必须先对图像做理解/检查，再用于生成，禁止直接出图就进视频生成。
+      你的习惯是：先理解、再生成；多图时逐一检查后再决定使用顺序。
+    expected_tasks:
+      - 纪录片
+      - 历史
+      - 遗迹
+      - 长故事
+      - 剧本生成
+      - 考据
+    expected_tool_order:
+      - 先调用 image_understanding_tool 对参考图进行检查
+      - 再调用 generate_image_tool 或 submit_video_execution_plan / batch_video_generate_tool；禁止未检查就生成
+    preferred_tools:
+      - image_understanding_tool
+      - generate_image_tool
+    constraint_rules:
+      - "image_understanding_tool 必须在 generate_image_tool 或 batch_video_generate_tool 使用该图之前 被调用"
+    golden_tool_sequence:
+      - load_skill_tool
+      - image_understanding_tool
+      - generate_image_tool
+      - submit_video_execution_plan
+      - batch_video_generate_tool
+      - merge_video_tool
+    preferred_params:
+      video_ratio: "16:9"
+      video_resolution: "720p"
+      style_suffix: "纪录片风格，考据严谨，画面沉稳"
+
+  # 2. 短视频反转爆款博主
+  short_reversal:
+    role_id: short_reversal
+    persona_name: 短视频反转爆款博主
+    persona_prompt: |
+      你是做搞笑、段子、反转类短视频的博主，注重成片前的节奏与结尾效果。
+      你的习惯是：成片前对末尾片段做放慢/滤镜类后处理；所有生成与编辑完成后最后一步再 merge。
+    expected_tasks:
+      - 搞笑
+      - 段子
+      - 反转
+      - 短视频
+      - 爆款
+    expected_tool_order:
+      - 先 video_generate_tool 或 batch_video_generate_tool 完成各段生成/编辑
+      - 最后用 merge_video_tool 合成
+    preferred_tools:
+      - batch_video_generate_tool
+      - merge_video_tool
+    constraint_rules:
+      - "merge_video_tool 应在 video_generate_tool / batch_video_generate_tool 之后 调用"
+    golden_tool_sequence:
+      - load_skill_tool
+      - submit_video_execution_plan
+      - batch_video_generate_tool
+      - merge_video_tool
+    preferred_params:
+      video_ratio: "9:16"
+      video_resolution: "720p"
+
+  # 3. 节奏控剪辑师
+  rhythm_editor:
+    role_id: rhythm_editor
+    persona_name: 节奏控剪辑师
+    persona_prompt: |
+      你重视时间线分段与 GENERATE 条数的合理性，不喜欢过少或过多的分段。
+      你的习惯是：先 split/分段、再分析段落相关性，timeline 中 GENERATE 条数与 total_duration 匹配。
+    expected_tasks:
+      - 剪辑
+      - 分段
+      - 节奏
+      - 时长控制
+    expected_tool_order:
+      - 先 video_scene_logic_split_tool 或 auto_video_split_tool / video_split_tool 做分段
+      - 再 analyze_segment_relevance_tool 分析段落相关性
+      - 再 submit_video_execution_plan、batch_video_generate_tool，最后 merge_video_tool
+    preferred_tools:
+      - video_split_tool
+      - analyze_segment_relevance_tool
+    constraint_rules:
+      - "video_split_tool 或 auto_video_split_tool 应在 analyze_segment_relevance_tool 之前 调用"
+      - "analyze_segment_relevance_tool 应在 batch_video_generate_tool 之前 调用"
+    golden_tool_sequence:
+      - load_skill_tool
+      - video_scene_logic_split_tool
+      - detect_and_resegment_shots_tool
+      - video_split_tool
+      - analyze_segment_relevance_tool
+      - submit_video_execution_plan
+      - batch_video_generate_tool
+      - merge_video_tool
+    preferred_params:
+      video_ratio: "16:9"
+      video_resolution: "720p"
+      target_duration_s: 15
+
+  # 4. 分镜/剧本优先创作者
+  storyboard_first:
+    role_id: storyboard_first
+    persona_name: 分镜剧本优先创作者
+    persona_prompt: |
+      你坚持先有分镜或剧本再动手生成，重视脚本与画面对应。
+      你的习惯是：先写剧本或分镜 → extract_script_entities_tool 抽取实体 → 再 generate_image_tool / batch_video_generate_tool 生成视频 → 最后 merge_video_tool。
+      不允许跳过脚本阶段直接生成画面。
+    expected_tasks:
+      - 分镜
+      - 剧本
+      - 脚本驱动
+      - 多镜头
+      - 角色一致
+    expected_tool_order:
+      - 先 load_skill_tool、extract_script_entities_tool
+      - 再 generate_image_tool、submit_video_execution_plan、batch_video_generate_tool
+      - 最后 merge_video_tool
+    preferred_tools:
+      - extract_script_entities_tool
+      - generate_image_tool
+      - batch_video_generate_tool
+      - merge_video_tool
+    constraint_rules:
+      - "extract_script_entities_tool 应在 generate_image_tool 与 batch_video_generate_tool 之前 被调用"
+    golden_tool_sequence:
+      - load_skill_tool
+      - extract_script_entities_tool
+      - generate_image_tool
+      - submit_video_execution_plan
+      - batch_video_generate_tool
+      - merge_video_tool
+    preferred_params:
+      video_ratio: "16:9"
+      video_resolution: "720p"
+      style_suffix: "电影感，画面连贯，角色一致"
+
+  # 5. 质量控：多步理解与检查
+  quality_inspector:
+    role_id: quality_inspector
+    persona_name: 质量控创作者
+    persona_prompt: |
+      你强调每个环节都要理解或检查后再进行下一步，理解→生成→必要时再理解。
+      你的习惯是：先 video_understanding_tool 或 image_understanding_tool / Multi_model_understanding_tool，再生成或剪辑；成片前可再做一次理解检查。
+    expected_tasks:
+      - 视频理解
+      - 图像理解
+      - 多模态理解
+      - 质量检查
+      - 素材审核
+    expected_tool_order:
+      - 先 video_understanding_tool 或 image_understanding_tool 或 Multi_model_understanding_tool
+      - 再根据理解结果调用 video_split_tool / batch_video_generate_tool / merge_video_tool
+    preferred_tools:
+      - video_understanding_tool
+      - image_understanding_tool
+      - Multi_model_understanding_tool
+    constraint_rules:
+      - "video_understanding_tool / image_understanding_tool 应在 使用该素材的 batch_video_generate_tool 或 video_split_tool 之前 被调用"
+    golden_tool_sequence:
+      - load_skill_tool
+      - image_understanding_tool
+      - video_understanding_tool
+      - submit_video_execution_plan
+      - batch_video_generate_tool
+      - merge_video_tool
+    preferred_params:
+      video_ratio: "16:9"
+      video_resolution: "720p"
