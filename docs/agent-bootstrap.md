@@ -36,8 +36,16 @@ Check whether cookies exist for each platform:
   social-auto-upload/cookies/bilibili_<username>-bilibili.json
   social-auto-upload/cookies/kuaishou_<username>-kuaishou.json
 
-For any missing cookie, guide me through login:
-  sau douyin login --account <username>-douyin
+For any existing cookie file, verify it is still valid before proceeding:
+  sau douyin check --account <username>-douyin
+  sau bilibili check --account <username>-bilibili
+  sau kuaishou check --account <username>-kuaishou
+
+For any missing or expired cookie, guide me through login.
+Douyin MUST use headed mode — Playwright does not inherit the system proxy
+in headless mode, and the creator portal is inaccessible without a proxy
+on most networks. In WSL, DISPLAY must be set:
+  DISPLAY=:0 sau douyin login --account <username>-douyin --headed
   sau bilibili login --account <username>-bilibili
   sau kuaishou login --account <username>-kuaishou
 
@@ -85,6 +93,25 @@ Once the test passes, start the continuous pipeline:
 This runs: fetch trending topic → generate video → publish to XHS →
 write publish_log → backfill social-media-feedback into trace.
 
+## Known transient failures — retry before touching code
+
+The following errors are network-level transients that occur regularly
+in this pipeline. **Always retry the same operation 2–3 times before
+assuming a bug or modifying any code.**
+
+| Error | Cause | Action |
+|-------|-------|--------|
+| `SSL: UNEXPECTED_EOF_WHILE_READING` | CDN dropped the connection mid-stream | Re-run the download; succeeds within 1–2 retries |
+| `SSL: DECRYPTION_FAILED_OR_BAD_RECORD_MAC` | TLS record corruption on CDN edge | Re-run; retry up to 3 times with a short wait between attempts |
+| TikHub `HTTP 400` on `fetch_video_search_result_v2` | Specific keyword string hits API filter | Retry with a shorter (4–6 char) or rephrased keyword; do not add error-handling code |
+| RSS `SSL EOF` from momoyu | Intermittent upstream SSL | Re-run `hot_topics_cron.py --force`; pass `--no-media` if the topic list is already written |
+| TikHub `HTTP 402 / 429` | Rate limit or quota exceeded | Wait 60 s then retry; verify `TIKHUB_API_TOKEN` is set if it persists |
+
+If an error persists after 3 retries, then investigate configuration
+or code — not before.
+
+---
+
 ## Step 6 — Monitor
 
 ### Dashboard
@@ -96,8 +123,24 @@ The dashboard shows all episodes (trace files), per-episode tool call
 timelines, plan structures, and publish metrics.
 
 ### Metrics refresh
-To pull the latest audience metrics from all platforms:
-  python3 utils/refresh_tikhub_all.py --username <username>
+TikHub does not support Xiaohongshu metrics (returns HTTP 400 — the
+endpoint requires a user-registered XHS cookie that is never available
+in this setup). Always split the refresh:
+
+  # Douyin / Bilibili / Kuaishou via TikHub
+  python3 utils/refresh_tikhub_all.py --username <username> \
+      --platform douyin bilibili kuaishou
+
+  # Xiaohongshu via local MCP (xiaohongshu-mcp must be running on :18060)
+  # Returns feeds[].interactInfo.likedCount for the last ~15 posts.
+  # Use any valid xsec_token from publish_log_v2.json as the auth token.
+  curl -s -X POST http://localhost:18060/api/v1/user/profile \
+    -H "Content-Type: application/json" \
+    -d '{"user_id": "<xhs_user_id>", "xsec_token": "<xsec_token>"}'
+
+Note: Douyin post_id is indexed by TikHub ~2 hours after publish.
+The `[douyin][backfill] 未能拉取用户帖子列表` message during this window
+is expected — do not re-publish. Run refresh again after 2 hours.
 
 ### Trigger learning
 After collecting enough traces (≥ 3 episodes recommended), run:

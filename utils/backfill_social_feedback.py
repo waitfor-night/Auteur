@@ -123,7 +123,7 @@ def backfill(username: str, start_title: str | None = None, dry_run: bool = Fals
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="将 publish_log 社交指标回填到 trace 文件")
-    parser.add_argument("--username", default="zhaili", help="workspace 用户名")
+    parser.add_argument("--username", required=True, help="workspace 用户名")
     parser.add_argument(
         "--start-title",
         default="豪宅变深大宿舍",

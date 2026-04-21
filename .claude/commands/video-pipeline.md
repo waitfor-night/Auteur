@@ -85,7 +85,17 @@ print(json.dumps(topic, ensure_ascii=False))
 "
 ```
 
-记录输出的 topic JSON，后续步骤需要 `title`、`platform`、`url` 字段。
+记录输出的 topic JSON，后续步骤需要以下字段：
+
+| 字段 | 说明 |
+|------|------|
+| `title` | 话题标题 |
+| `platform` | 来源平台 |
+| `url` | 原始链接 |
+| `video_style` | `showcase` / `question` / `narrative`，未填时按 `showcase` 处理 |
+| `preferred_ratio` | `9:16` 或 `16:9`，未填时按 `9:16` 处理 |
+| `video_concept` | 一句话视觉概念，未填时为空字符串 |
+| `media.ref_video` | 本地参考视频绝对路径；字段不存在或为 `null` 时忽略 |
 
 ---
 
@@ -97,12 +107,24 @@ print(json.dumps(topic, ensure_ascii=False))
 import json
 from video_assistant import VideoAssistant
 
-username = "<username>"
-title    = "<Step1.title>"
-platform = "<Step1.platform>"
-url      = "<Step1.url>"
+username      = "<username>"
+title         = "<Step1.title>"
+platform      = "<Step1.platform>"
+url           = "<Step1.url>"
+video_style   = "<Step1.video_style or 'showcase'>"
+preferred_ratio = "<Step1.preferred_ratio or '9:16'>"
+video_concept = "<Step1.video_concept or ''>"
+ref_video     = "<Step1.media.ref_video or ''>"   # 本地绝对路径，可能为空
 
-user_input = f"根据热点话题「{title}」制作一个适合小红书的短视频，来源平台：{platform}，参考链接：{url}"
+# 构造 user_input：将媒体路径和创作方向一起交给 MoMo
+lines = [f"根据热点话题「{title}」制作一个{video_style}风格的短视频。"]
+if video_concept:
+    lines.append(f"视觉概念：{video_concept}")
+lines.append(f"画面比例：{preferred_ratio}")
+lines.append(f"来源平台：{platform}，参考链接：{url}")
+if ref_video:
+    lines.append(f"本地参考视频（可直接调用工具加载）：{ref_video}")
+user_input = "\n".join(lines)
 
 assistant = VideoAssistant(
     output_dir=f"workspace/output/hot_topics_{title[:10]}",

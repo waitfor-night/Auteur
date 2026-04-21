@@ -249,7 +249,7 @@ def _xhs_fetch_user_posts(client, user_id: str) -> list[dict]:
     notes, cursor = [], ""
     for _ in range(10):
         try:
-            resp = client.xiaohongshu_web.get_user_notes_v2(user_id=user_id, cursor=cursor)
+            resp = client.xiaohongshu_web.get_user_notes_v2(user_id=user_id, lastCursor=cursor or None)
         except Exception as e:
             print(f"[xhs] get_user_notes_v2 异常：{e}", file=sys.stderr); break
         data = resp if isinstance(resp, dict) else {}
@@ -336,9 +336,9 @@ def _xhs_fetch_comments(client, post_id: str) -> list[dict]:
 # 抖音
 # ──────────────────────────────────────────────
 
-def _douyin_fetch_user_posts(client, sec_user_id: str) -> list[dict]:
+def _douyin_fetch_user_posts(client, sec_user_id: str, username: str = "") -> list[dict]:
     posts, max_cursor = [], None
-    cookie = _load_sau_cookie("douyin", "zhiali-douyin")
+    cookie = _load_sau_cookie("douyin", f"{username}-douyin") if username else ""
     for _ in range(10):
         try:
             resp = client.douyin_web.fetch_user_post_videos(
@@ -632,7 +632,7 @@ def backfill_missing_ids(username: str, client, platform: str, user_id: str) -> 
     print(f"[{platform}][backfill] 缺失 post_id：{len(pending)} 条")
 
     handler = _PLATFORM_HANDLERS[platform]
-    all_posts = handler["fetch_user_posts"](client, user_id)
+    all_posts = handler["fetch_user_posts"](client, user_id, username)
     if not all_posts:
         print(f"[{platform}][backfill] 未能拉取用户帖子列表", file=sys.stderr)
         return
@@ -669,7 +669,7 @@ def refresh_platform_stats(username: str, client, platform: str, user_id: str, d
     # 快手：提前拉用户主页列表，直接从列表项读指标
     ks_posts_map: dict[str, dict] = {}
     if handler["kuaishou_list_stats"]:
-        raw_list = handler["fetch_user_posts"](client, user_id)
+        raw_list = handler["fetch_user_posts"](client, user_id, username)
         ks_posts_map = {p["post_id"]: p for p in raw_list if p.get("post_id")}
 
     for item in active:

@@ -18,7 +18,9 @@ app = Flask(__name__)
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 WORKSPACE = PROJECT_ROOT / "workspace"
 
-_raw_user = os.environ.get("MOMO_USER", "zhaili")
+_raw_user = os.environ.get("MOMO_USER", "")
+if not _raw_user:
+    raise SystemExit("环境变量 MOMO_USER 未设置，请在启动前 export MOMO_USER=<username>")
 # allow only safe characters — no path traversal (e.g. "../etc")
 if not _raw_user.replace("-", "").replace("_", "").isalnum():
     raise SystemExit(f"MOMO_USER '{_raw_user}' contains invalid characters.")
