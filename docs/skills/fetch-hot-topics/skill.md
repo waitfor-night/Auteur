@@ -1,3 +1,8 @@
+---
+name: fetch-hot-topics
+description: 当 agent 需要抓取当前热点话题时使用这个 skill。从抖音热搜和摸摸鱼多平台热榜拉取内容，经两轮 LLM 过滤和 Seedance 可行性标注后写入 hot_topics_state.json，供视频生成流程消费。
+---
+
 # Skill: fetch-hot-topics
 
 抓取多平台热点话题，经过两轮 LLM 过滤，并为每条话题下载本地参考视频，最终写入 `workspace/<username>/hot_topics_state.json` 供后续生成流程消费。

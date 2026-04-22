@@ -15,7 +15,7 @@ actor_agent = Agent(
     description=ACTOR_AGENT_PROMPT,
     tools=ACTOR_TOOLS,
     model=OpenAIResponses(
-        id=os.environ.get("ACTOR_MODEL", "doubao-seed-1-8-251228"),
+        id=os.environ.get("ACTOR_MODEL", "doubao-seed-2-0-pro-260215"),
         base_url="https://ark.cn-beijing.volces.com/api/v3",
         api_key=os.environ.get("ARK_API_KEY")
     ),

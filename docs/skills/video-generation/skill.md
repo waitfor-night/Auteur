@@ -1,3 +1,8 @@
+---
+name: video-generation
+description: 当 agent 需要根据用户指令生成视频时使用这个 skill。通过 VideoAssistant 的 Planner-Actor 多轮迭代架构完成视频生成、编辑、续写等任务，支持从热点话题直接生成，结果可直接传入发布 skill。
+---
+
 # Skill: video-generation
 
 调用 `VideoAssistant` 将用户指令转化为视频。VideoAssistant 内部运行 Planner-Actor 多轮迭代架构，支持纯生成、视频编辑、剧本转视频等多种场景。

@@ -26,4 +26,12 @@ publish_log.json
 social-auto-upload/cookies/
 xiaohongshu-mcp/xiaohongshu-mcp
 xiaohongshu-mcp/cookies.json
-scripts/
+/scripts/
+
+# YouTube OAuth 凭据（含 client_secret / token，不入库）
+docs/skills/youtube-upload/scripts/secrets/
+docs/skills/youtube-upload/scripts/client_secret_*.json
+docs/skills/youtube-upload/scripts/*.json:Zone.Identifier
+
+# TikTok cookies（含登录态，不入库）
+docs/skills/tiktok-upload/cookies.txt
