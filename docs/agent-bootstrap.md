@@ -24,8 +24,8 @@ the exact command to fix it:
    TOS_SECRET_KEY, TIKHUB_API_TOKEN filled in.
 2. `social-auto-upload` submodule is present and `sau` CLI is importable
    (run: `sau --version`).
-3. `xiaohongshu-mcp/xiaohongshu-mcp` binary exists (if not, run:
-   `cd xiaohongshu-mcp && go build -o xiaohongshu-mcp .`).
+3. `yt-dlp` is installed in the project venv (run: `pip install yt-dlp`).
+   Required for YouTube reference video download.
 4. ffmpeg is installed (`ffmpeg -version`).
 
 ## Step 3 — Platform account setup
@@ -48,16 +48,6 @@ on most networks. In WSL, DISPLAY must be set:
   DISPLAY=:0 sau douyin login --account <username>-douyin --headed
   sau bilibili login --account <username>-bilibili
   sau kuaishou login --account <username>-kuaishou
-
-### Xiaohongshu (xiaohongshu-mcp)
-Check workspace/<username>/xhs_config.json for xhs_account and xhs_user_id.
-If missing, ask me for my Xiaohongshu nickname and user ID, then run:
-  python3 utils/xhs_publish.py set-account \
-      --username <username> --xhs-account <nickname> --xhs-user-id <user_id>
-
-Start the MCP service in the background and confirm it responds:
-  cd xiaohongshu-mcp && nohup ./start.sh > /tmp/xhs-mcp.log 2>&1 &
-  curl -s http://localhost:18060/api/v1/health || echo "service not ready"
 
 ### Platform user IDs (for metrics)
 Check workspace/<username>/platform_config.json.
@@ -87,11 +77,18 @@ Show me the result and confirm output_path is a valid video file.
 
 ## Step 5 — Start the content pipeline
 
-Once the test passes, start the continuous pipeline:
+Once the test passes, fetch hot topics and start the continuous pipeline:
+
+  # Fetch trending topics with multi-source reference videos (runs automatically
+  # inside pipeline_runner every 2 days; use --force to refresh immediately)
+  python3 utils/hot_topics_cron.py --username <username> --force
+
+  # Run the pipeline: pick topic → generate video → publish → write log → backfill trace
   python3 utils/pipeline_runner.py --username <username> --max 3
 
-This runs: fetch trending topic → generate video → publish to XHS →
-write publish_log → backfill social-media-feedback into trace.
+hot_topics_cron downloads reference videos from Douyin, TikTok, and YouTube in
+parallel for each topic. These are passed to VideoAssistant as ref_videos and
+appear in Planner's Runtime Inputs for style reference.
 
 ## Known transient failures — retry before touching code
 
@@ -102,13 +99,16 @@ assuming a bug or modifying any code.**
 | Error | Cause | Action |
 |-------|-------|--------|
 | `SSL: UNEXPECTED_EOF_WHILE_READING` | CDN dropped the connection mid-stream | Re-run the download; succeeds within 1–2 retries |
-| `SSL: DECRYPTION_FAILED_OR_BAD_RECORD_MAC` | TLS record corruption on CDN edge | Re-run; retry up to 3 times with a short wait between attempts |
-| TikHub `HTTP 400` on `fetch_video_search_result_v2` | Specific keyword string hits API filter | Retry with a shorter (4–6 char) or rephrased keyword; do not add error-handling code |
-| RSS `SSL EOF` from momoyu | Intermittent upstream SSL | Re-run `hot_topics_cron.py --force`; pass `--no-media` if the topic list is already written |
-| TikHub `HTTP 402 / 429` | Rate limit or quota exceeded | Wait 60 s then retry; verify `TIKHUB_API_TOKEN` is set if it persists |
+| `SSL: DECRYPTION_FAILED_OR_BAD_RECORD_MAC` | TLS record corruption on CDN edge | Re-run; retry up to 3 times with a short wait |
+| RSS `SSL EOF` from momoyu | Intermittent upstream SSL | Re-run `hot_topics_cron.py --force`; pass `--no-media` if topic list is already written |
+| TikHub `HTTP 402 / 429` | Rate limit or quota exceeded | Wait 60 s then retry; verify `TIKHUB_API_TOKEN` is set |
+| LLM `TPM limit exceeded` | Doubao daily quota exhausted | Wait for quota reset; add `--no-score` to skip scoring temporarily |
 
-If an error persists after 3 retries, then investigate configuration
-or code — not before.
+Do not use `tiktok_web.fetch_search_video` — it requires a cookie and returns
+HTTP 400. The codebase uses `tiktok_app_v3.fetch_video_search_result` instead.
+YouTube search parameter is `search_query`, not `keyword`. Do not revert these.
+
+If an error persists after 3 retries, then investigate — not before.
 
 ---
 
@@ -123,20 +123,10 @@ The dashboard shows all episodes (trace files), per-episode tool call
 timelines, plan structures, and publish metrics.
 
 ### Metrics refresh
-TikHub does not support Xiaohongshu metrics (returns HTTP 400 — the
-endpoint requires a user-registered XHS cookie that is never available
-in this setup). Always split the refresh:
+Run TikHub refresh for Douyin / Bilibili / Kuaishou:
 
-  # Douyin / Bilibili / Kuaishou via TikHub
   python3 utils/refresh_tikhub_all.py --username <username> \
       --platform douyin bilibili kuaishou
-
-  # Xiaohongshu via local MCP (xiaohongshu-mcp must be running on :18060)
-  # Returns feeds[].interactInfo.likedCount for the last ~15 posts.
-  # Use any valid xsec_token from publish_log_v2.json as the auth token.
-  curl -s -X POST http://localhost:18060/api/v1/user/profile \
-    -H "Content-Type: application/json" \
-    -d '{"user_id": "<xhs_user_id>", "xsec_token": "<xsec_token>"}'
 
 Note: Douyin post_id is indexed by TikHub ~2 hours after publish.
 The `[douyin][backfill] 未能拉取用户帖子列表` message during this window
