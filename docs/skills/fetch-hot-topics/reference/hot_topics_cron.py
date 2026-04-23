@@ -29,7 +29,7 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from utils.fetch_topics import fetch_rss, parse_items, truncate_items
+from utils.fetch_topics import fetch_all_hot, truncate_items
 
 _ENV_FILE = PROJECT_ROOT / ".env"
 if _ENV_FILE.exists():
@@ -103,11 +103,7 @@ def should_fetch(state: dict, force: bool) -> bool:
 
 
 def fetch_topics(top: int) -> list[dict]:
-    from utils.fetch_topics import DEFAULT_CODE
-    xml_text = fetch_rss(DEFAULT_CODE)
-    platforms = parse_items(xml_text)
-    platforms = truncate_items(platforms, top)
-
+    platforms = fetch_all_hot(top=top)
     topics = []
     for platform, items in platforms.items():
         for item in items:
@@ -117,7 +113,7 @@ def fetch_topics(top: int) -> list[dict]:
                 "title": item["title"],
                 "url": item["url"],
                 "status": "unused",
-                "use_count": 0,  # 生命周期内累计使用次数
+                "use_count": 0,
             })
     return topics
 
