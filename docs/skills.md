@@ -1,6 +1,21 @@
-# Planner 任务 Skill
+# Skill 目录说明
 
-本目录按「任务类型」存放 skill，通过**任务判断**在运行时导入对应 skill 注入 Planner prompt。
+## 两类 Skill 的区别
+
+| 目录 | 用途 | 消费者 |
+|------|------|--------|
+| **`docs/skills/`**（本目录） | 通用 Skill，面向 Agent 客户端（Claude Code、OpenClaw、Codex 等），以 slash command 形式调用，描述端到端工作流（如抓取热点、视频生成流水线、多平台发布） | 任意 Agent 客户端 |
+| **`skills/`** | MoMo Agent 内部 Skill，仅供 MoMo Planner 在运行时加载，通过 `load_skill_tool` / `skill_loader.py` 注入 Planner prompt，控制视频生成任务的编排逻辑 | MoMo Planner（内部） |
+
+`docs/skills/` 中的每个子目录对应一个 slash command skill，包含 `skill.md`（描述 + 命令 + 参考实现）及可选的 `reference/`（底层实现代码副本，用于分发）。
+
+`skills/` 中的每个子目录包含 `SKILL.md`（YAML frontmatter + 正文），格式与 Cursor skill 一致，由 `skill_loader.py` 按任务类型动态选择并注入 Planner 系统 prompt。
+
+---
+
+# MoMo 内部 Planner Skill（`skills/` 目录）
+
+按「任务类型」存放 skill，通过**任务判断**在运行时导入对应 skill 注入 Planner prompt。
 
 ## 架构说明
 
