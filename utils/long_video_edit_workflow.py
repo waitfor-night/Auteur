@@ -199,7 +199,7 @@ def get_plan_for_actor(
 
     # 优先级3: 从 execution_plan_store 读取
     try:
-        from execution_plan_store import get_plan
+        from utils.execution_plan_store import get_plan
         stored_plan = get_plan()
         if stored_plan:
             return json.dumps(_to_plan_obj(stored_plan), ensure_ascii=False)
@@ -320,7 +320,7 @@ def run_long_video_edit_workflow(
     # Step 2: 获取 Plan（优先从 execution_plan_store，否则从 planner 回复解析）
     plan = None
     try:
-        from execution_plan_store import get_plan
+        from utils.execution_plan_store import get_plan
         plan = get_plan()
     except Exception:
         pass

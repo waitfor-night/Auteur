@@ -14,7 +14,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-# 项目根加入 path，保证可导入 planner_copy / actor / long_video_edit_workflow
+# 项目根加入 path，保证可导入 planner / actor / utils.*
 _ROOT = Path(__file__).resolve().parent
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
@@ -71,7 +71,7 @@ def _run_workflow_sync(
     use_auto_split_pipeline: bool,
     allow_interactive: bool,
 ) -> str:
-    from long_video_edit_workflow import run_long_video_edit_workflow
+    from utils.long_video_edit_workflow import run_long_video_edit_workflow
     return run_long_video_edit_workflow(
         video_path=video_path,
         InitUserMessage=init_user_message,
@@ -113,12 +113,12 @@ def _run_planner_sync(
     )
     plan = None
     try:
-        from execution_plan_store import get_plan
+        from utils.execution_plan_store import get_plan
         plan = get_plan()
     except Exception:
         pass
     if plan is None and run_response and getattr(run_response, "content", None):
-        from long_video_edit_workflow import extract_plan_json
+        from utils.long_video_edit_workflow import extract_plan_json
         raw = (run_response.content or "").strip()
         extracted = extract_plan_json(raw)
         if extracted.startswith("{"):
@@ -132,7 +132,7 @@ def _run_planner_sync(
 
 
 def _run_actor_sync(plan: dict[str, Any]) -> str:
-    from long_video_edit_workflow import execute_plan_with_actor
+    from utils.long_video_edit_workflow import execute_plan_with_actor
     return execute_plan_with_actor(plan=plan, stream=False)
 
 
