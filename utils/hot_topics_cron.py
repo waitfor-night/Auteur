@@ -43,7 +43,7 @@ FETCH_INTERVAL_DAYS = 2
 DEFAULT_TOP = 10
 SCORE_THRESHOLD = 5      # 低于此分的话题直接丢弃
 MAX_DAILY_TOPICS = 3     # 每次 cron 最终写入队列的话题上限
-SCORE_MODEL = "doubao-seed-1-8-251228"  # 用轻量模型打分，省 token
+SCORE_MODEL = "doubao-seed-2-0-pro-260215"
 
 
 def _state_path(username: str) -> Path:
@@ -346,16 +346,18 @@ def _download_media(topics: list[dict], username: str, log: logging.Logger) -> N
         return
     try:
         from tikhub import TikHub
-        from utils.topic_media import fetch_topic_video, build_media_field
+        from utils.topic_media import fetch_topic_videos, build_media_field
         client = TikHub(api_key=tikhub_token)
         media_root = PROJECT_ROOT / "workspace" / username / "hot_topics_media"
         for t in topics:
-            path = fetch_topic_video(client, t, media_root)
-            t["media"] = build_media_field(path)
+            paths = fetch_topic_videos(client, t, media_root)
+            t["media"] = build_media_field(paths)
             if t["media"]:
-                log.info(f"  [media] ✓ {t['title'][:25]} → {t['media']['ref_video']}")
+                log.info(f"  [media] ✓ {t['title'][:25]} → {len(paths)} 条视频")
+                for p in paths:
+                    log.info(f"    {p}")
             else:
-                log.warning(f"  [media] ✗ {t['title'][:25]} 下载失败，media=null")
+                log.warning(f"  [media] ✗ {t['title'][:25]} 全部来源下载失败，media=null")
     except Exception as e:
         log.warning(f"媒体下载异常（不影响话题写入）：{e}")
 

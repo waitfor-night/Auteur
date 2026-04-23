@@ -39,6 +39,7 @@ result = assistant.run(
     user_input="<用户指令>",                      # 主指令（必填）
     video_path="",                                # 输入视频路径（编辑场景用）
     image_paths=[],                               # 参考图路径列表
+    ref_videos=[],                                # 参考视频路径列表（热点媒体抓取结果）
 )
 ```
 
@@ -64,11 +65,12 @@ result = assistant.run(
 
 ## 从热点话题生成视频
 
-当上游来自 `fetch-hot-topics` skill 时，`user_input` 按如下规则构造，**将 topic 字段原样传入，不做裁剪**：
+当上游来自 `fetch-hot-topics` skill 时，按如下规则构造参数：
+- `user_input` 包含话题标题、风格、概念等文字信息
+- `ref_videos` 直接传入 `media.ref_videos` 列表，Planner 可通过多模态理解工具分析这些视频
 
 ```python
 import json
-from pathlib import Path
 from video_assistant import VideoAssistant
 
 # 从 hot_topics_state.json 取到的 topic 对象
@@ -80,34 +82,42 @@ topic = {
     "preferred_ratio": "9:16",         # 9:16 / 16:9
     "video_concept": "城市停车场空旷，年轻人骑车或步行经过",
     "media": {
-        "ref_video": "/abs/path/workspace/<username>/hot_topics_media/a1b2c3d4/ref_video.mp4"
+        "ref_videos": [
+            "/abs/path/workspace/<username>/hot_topics_media/a1b2c3d4/ref_douyin.mp4",
+            "/abs/path/workspace/<username>/hot_topics_media/a1b2c3d4/ref_tiktok.mp4",
+            "/abs/path/workspace/<username>/hot_topics_media/a1b2c3d4/ref_youtube.mp4",
+        ],
+        "fetched_at": "2026-04-23T10:05:00"
     }
 }
 
-username     = "<username>"
-title        = topic["title"]
-platform     = topic.get("platform", "")
-url          = topic.get("url", "")
-video_style  = topic.get("video_style") or "showcase"
-ratio        = topic.get("preferred_ratio") or "9:16"
-concept      = topic.get("video_concept") or ""
-ref_video    = (topic.get("media") or {}).get("ref_video") or ""
+username    = "<username>"
+title       = topic["title"]
+platform    = topic.get("platform", "")
+url         = topic.get("url", "")
+video_style = topic.get("video_style") or "showcase"
+ratio       = topic.get("preferred_ratio") or "9:16"
+concept     = topic.get("video_concept") or ""
+ref_videos  = (topic.get("media") or {}).get("ref_videos") or []
 
 lines = [f"根据热点话题「{title}」制作一个{video_style}风格的短视频。"]
 if concept:
     lines.append(f"视觉概念：{concept}")
 lines.append(f"画面比例：{ratio}")
 lines.append(f"来源平台：{platform}，参考链接：{url}")
-if ref_video:
-    lines.append(f"本地参考视频（可直接调用工具加载）：{ref_video}")
+if ref_videos:
+    lines.append(f"已提供 {len(ref_videos)} 条本地参考视频，可通过视频理解工具分析风格。")
 user_input = "\n".join(lines)
 
 assistant = VideoAssistant(
-    output_dir=f"workspace/output/hot_topics_{title[:10]}",  # 相对路径，自动写到 reference/workspace/
+    output_dir=f"workspace/output/hot_topics_{title[:10]}",
     username=username,
     allow_interactive=False,
 )
-result = assistant.run(user_input=user_input)
+result = assistant.run(
+    user_input=user_input,
+    ref_videos=ref_videos,   # 参考视频路径列表，写入 Runtime Inputs 供 Planner 按需调用
+)
 
 # 保存 result 供后续发布流程读取
 with open("/tmp/va_result.json", "w") as f:
@@ -115,6 +125,17 @@ with open("/tmp/va_result.json", "w") as f:
 
 print(json.dumps(result, ensure_ascii=False))
 ```
+
+**Planner 使用 `ref_videos` 的方式：**
+
+Runtime Inputs 中会出现 `- ref_videos: ["/abs/path/ref_douyin.mp4", ...]`。Planner 可通过以下工具利用这些视频：
+
+| 工具 | 用途 |
+|------|------|
+| `video_understanding_tool` | 理解参考视频的画面风格、节奏、构图 |
+| `mmut_extract_frames_tool` | 提取关键帧，用作后续生成的参考图 |
+
+不需要每次都分析全部参考视频——仅在 user_input 或 video_concept 不够具体时才调用。
 
 ---
 
