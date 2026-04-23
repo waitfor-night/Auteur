@@ -103,8 +103,7 @@ class VideoAssistant:
             context_subdir: 可选子目录，使 context 写 workspace/<username>/context/<context_subdir>/，实现「一 task 一 context」
         """
         # 基础配置
-        _out = Path(output_dir)
-        self.output_dir = (_out if _out.is_absolute() else self._PROJECT_ROOT / _out).resolve()
+        self.output_dir = Path(output_dir).resolve()
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self.time_length = time_length
         self.total_duration = total_duration
@@ -142,6 +141,7 @@ class VideoAssistant:
         self.user_input: Optional[str] = None
         self.video_path: str = ""
         self.image_paths: List[str] = []
+        self.ref_videos: List[str] = []
         self.current_plan: Optional[dict] = None
         self.start_time: Optional[float] = None
         self.current_round: int = 0
@@ -214,11 +214,13 @@ class VideoAssistant:
         """设置运行上下文全局变量（供 Planner 和 Tools 使用）。"""
         import planner as planner_module
         import utils.tools_implement as tools_impl
+        from tools import constants as tools_constants
 
         planner_module.RUN_CONTEXT_IMAGE_PATHS = self.image_paths
         planner_module.RUN_CONTEXT_VIDEO_PATH = self.video_path if self.video_path else None
         tools_impl.RUN_CONTEXT_IMAGE_PATHS = self.image_paths
         tools_impl.RUN_CONTEXT_VIDEO_PATH = self.video_path if self.video_path else None
+        tools_constants.RUN_CONTEXT_REF_VIDEOS = self.ref_videos or None
 
     def _build_user_message(self) -> str:
         """构建当前轮次的 user_message（含历史记忆）。"""
@@ -237,6 +239,10 @@ class VideoAssistant:
         else:
             base_message += "- video_path: (无)\n"
         base_message += f"- image_paths: {self.image_paths}\n"
+        if self.ref_videos:
+            base_message += f"- ref_videos: {self.ref_videos}\n"
+        else:
+            base_message += "- ref_videos: (无)\n"
         base_message += f"- output_dir: {self.output_dir}\n"
 
         # 添加历史记忆
@@ -272,6 +278,7 @@ class VideoAssistant:
                 allow_interactive=self.allow_interactive,
                 video_path=self.video_path,
                 image_paths=self.image_paths,
+                ref_videos=self.ref_videos,
                 time_length=self.time_length,
                 total_duration=self.total_duration,
                 InitUserMessage=self.user_input,
@@ -652,15 +659,17 @@ class VideoAssistant:
         user_input: Optional[str] = None,
         video_path: str = "",
         image_paths: Optional[List[str]] = None,
+        ref_videos: Optional[List[str]] = None,
     ) -> dict:
         """
         运行完整流程（可能多轮迭代）。
-        
+
         Args:
             user_input: 用户原始输入（剧本/编辑指令）
-            video_path: 输入视频路径（可选）
+            video_path: 输入视频路径（可选，用于编辑/续写）
             image_paths: 参考图路径列表（可选）
-            
+            ref_videos: 参考视频路径列表（可选），来自热点媒体抓取，供 Planner 理解内容风格
+
         Returns:
             结果字典，包含 success, output_path, context_id, total_rounds, duration_sec, error
         """
@@ -681,6 +690,7 @@ class VideoAssistant:
 
         self.video_path = video_path
         self.image_paths = image_paths or []
+        self.ref_videos = ref_videos or []
 
         # 设置全局上下文
         self._set_run_context_globals()

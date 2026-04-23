@@ -1,6 +1,7 @@
 FULL_VIDEO_UNDERSTANDING_CONTENT = None
 RUN_CONTEXT_IMAGE_PATHS = None
 RUN_CONTEXT_VIDEO_PATH = None
+RUN_CONTEXT_REF_VIDEOS = None  # list[str] | None — 热点参考视频本地路径列表
 
 IMAGE_UNDERSTANDING_PROMPT = (
     "请详细描述这张图片的内容，可包括人物、场景、物体、动作、颜色、布局、氛围等。"
