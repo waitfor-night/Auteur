@@ -176,16 +176,16 @@ python -m sandbox.plot_metrics --input sandbox/output/metrics.json --output sand
 如需脱离 sandbox 流程独立优化 meta-skill（也可对接 learning 模块）：
 
 ```bash
-# 新接口：同时优化 meta-skill + 用户 memory
+# 同时优化 meta-skill + 用户 memory
 python -m learning.learning \
     --meta_skill skills/SKILL_doc_rigorous.md \
     --username doc_rigorous \
     --trace workspace/doc_rigorous/context \
     --engine kimi-k2-turbo-preview
 
-# 旧接口：仅优化 meta-skill（仍可用）
-python optimize_meta_skill.py \
-    --meta_skill skills/meta-skill/SKILL.md \
-    --trace workspace/context \
-    --output skills/meta-skill/SKILL_opt.md
+# 仅优化 meta-skill
+python -m learning.optimize_meta_skill \
+    --meta_skill skills/SKILL_doc_rigorous.md \
+    --trace workspace/doc_rigorous/context \
+    --output skills/SKILL_opt_doc_rigorous.md
 ```

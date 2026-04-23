@@ -167,16 +167,12 @@ print(result)
 # 运行 sandbox 三阶段实验流水线
 python -m sandbox.run_episode_loop --username doc_rigorous --role_id doc_rigorous
 
-# 优化 meta-skill 与用户 memory（新）
+# 优化 meta-skill 与用户 memory
 python -m learning.learning \
     --meta_skill skills/SKILL_doc_rigorous.md \
     --username doc_rigorous \
     --trace workspace/doc_rigorous/context \
     --engine kimi-k2-turbo-preview
-
-# 仅优化 meta-skill（旧接口，仍可用）
-python optimize_meta_skill.py --meta_skill skills/meta-skill/SKILL.md \
-    --trace workspace/context --output skills/meta-skill/SKILL_opt.md
 
 # 计算实验指标
 python -m sandbox.eval_metrics --username doc_rigorous --output sandbox/output/metrics.json
@@ -247,8 +243,6 @@ workspace/<username>/trace/ep_<timestamp>_<hash>.json      # TraceRecorder
 - `learning/optimization/memory_loss.py` — 基于用户反馈计算 memory loss
 - `learning/tgd_engine.py` — TextGrad engine 封装
 - `learning/update_memory.py` — 更新用户 memory 文件
-
-根目录 `optimize_meta_skill.py` 是旧版单独优化入口，仍可用。
 
 ### Sandbox / Experiment Framework
 
