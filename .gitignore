@@ -35,3 +35,7 @@ docs/skills/youtube-upload/scripts/*.json:Zone.Identifier
 
 # TikTok cookies（含登录态，不入库）
 docs/skills/tiktok-upload/cookies.txt
+
+# YouTube upload CLI (deployed by youtube-upload skill)
+ytcli/secrets/
+ytcli/
