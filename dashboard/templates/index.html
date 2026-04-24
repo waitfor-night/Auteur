@@ -23,6 +23,8 @@
   --bilibili: #fb7299;
   --kuaishou: #ff6b00;
   --xhs:      #ff2442;
+  --tiktok:   #69c9d0;
+  --youtube:  #ff0000;
   --skill-bg: #1c2128;
   --radius:   6px;
   --header-h: 52px;
@@ -104,10 +106,12 @@ main {
 .platform-dot {
   width: 6px; height: 6px; border-radius: 50%; display: inline-block;
 }
-.platform-dot.douyin   { background: var(--douyin); }
-.platform-dot.bilibili { background: var(--bilibili); }
-.platform-dot.kuaishou { background: var(--kuaishou); }
+.platform-dot.douyin      { background: var(--douyin); }
+.platform-dot.bilibili    { background: var(--bilibili); }
+.platform-dot.kuaishou    { background: var(--kuaishou); }
 .platform-dot.xiaohongshu { background: var(--xhs); }
+.platform-dot.tiktok      { background: var(--tiktok); }
+.platform-dot.youtube     { background: var(--youtube); }
 .published-label { font-size: 10px; color: var(--success); }
 .duration-label { font-size: 10px; color: var(--muted); }
 
@@ -230,10 +234,12 @@ main {
   align-items: center; justify-content: center; font-size: 13px; font-weight: 700;
   flex-shrink: 0;
 }
-.platform-icon.douyin   { background: #200c13; color: var(--douyin); }
-.platform-icon.bilibili { background: #1a0d14; color: var(--bilibili); }
-.platform-icon.kuaishou { background: #1e1200; color: var(--kuaishou); }
+.platform-icon.douyin      { background: #200c13; color: var(--douyin); }
+.platform-icon.bilibili    { background: #1a0d14; color: var(--bilibili); }
+.platform-icon.kuaishou    { background: #1e1200; color: var(--kuaishou); }
 .platform-icon.xiaohongshu { background: #200510; color: var(--xhs); }
+.platform-icon.tiktok      { background: #1a0d14; color: var(--bilibili); }
+.platform-icon.youtube     { background: #1a0d14; color: var(--bilibili); }
 .platform-name { font-size: 13px; font-weight: 600; color: #e6edf3; }
 .platform-post-title {
   font-size: 11px; color: var(--muted); margin-bottom: 10px;
@@ -322,10 +328,12 @@ let trendsChart = null;
 let activeMetric = 'liked_count';
 
 const PLATFORM_META = {
-  douyin:      { name: '抖音',  icon: '抖', cls: 'douyin'   },
-  bilibili:    { name: 'B站',   icon: 'B',  cls: 'bilibili' },
-  kuaishou:    { name: '快手',  icon: '快', cls: 'kuaishou' },
-  xiaohongshu: { name: '小红书',icon: '红', cls: 'xiaohongshu' },
+  douyin:      { name: '抖音',    icon: '抖', cls: 'douyin'      },
+  bilibili:    { name: 'B站',     icon: 'B',  cls: 'bilibili'    },
+  kuaishou:    { name: '快手',    icon: '快', cls: 'kuaishou'    },
+  xiaohongshu: { name: '小红书',  icon: '红', cls: 'xiaohongshu' },
+  tiktok:      { name: 'TikTok', icon: 'T',  cls: 'tiktok'      },
+  youtube:     { name: 'YouTube',icon: 'Y',  cls: 'youtube'     },
 };
 
 const METRIC_LABELS = {
@@ -341,6 +349,8 @@ const PLATFORM_COLORS = {
   bilibili:    '#fb7299',
   kuaishou:    '#ff6b00',
   xiaohongshu: '#ff2442',
+  tiktok:      '#69c9d0',
+  youtube:     '#ff0000',
 };
 
 // ── utils ──────────────────────────────────────────────────────────────────
