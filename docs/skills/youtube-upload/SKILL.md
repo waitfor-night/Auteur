@@ -58,14 +58,24 @@ python3 <project>/ytcli/auth.py
 4. 用 TikHub `youtube_web.get_video_info` 验证视频已上线。
 5. 如遇 401 `youtubeSignupRequired` 或 token 过期，执行 `python3 ytcli/auth.py` 重新授权后重试。
 
+## 标题与标签语言
+
+**YouTube 必须使用英文**，从 VideoAssistant 结果中取 `en_title` 和 `en_tags`（不要用 `xhs_title`/`xhs_tags`）：
+
+```python
+en_title = result["en_title"]          # 英文标题，5-10 词
+en_tags  = result["en_tags"]           # 英文标签列表，不含 #
+tags_str = ",".join(en_tags)
+```
+
 ## 上传命令完整参数
 
 ```bash
 python3 ytcli/upload.py \
   --file      "<视频文件路径>" \
-  --title     "<标题>" \
-  --description "<简介>" \
-  --tags      "<tag1>,<tag2>,<tag3>" \
+  --title     "<en_title（英文）>" \
+  --description "<en_title（英文）>" \
+  --tags      "<en_tags 逗号分隔（英文）>" \
   --category  "<分类 ID>" \
   --privacy   "public|private|unlisted"
 ```

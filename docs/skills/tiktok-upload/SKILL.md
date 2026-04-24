@@ -16,13 +16,23 @@ description: 当 agent 需要将视频发布到 TikTok 时使用这个 skill。�
     └── upload.py    ← 主入口，自动切换无头/有头模式
 ```
 
+## 标题与标签语言
+
+**TikTok 必须使用英文**，从 VideoAssistant 结果中取 `en_title` 和 `en_tags`（不要用 `xhs_title`/`xhs_tags`）：
+
+```python
+en_title = result["en_title"]          # 英文标题，5-10 词
+en_tags  = result["en_tags"]           # 英文标签列表，不含 #
+description = en_title + " " + " ".join(f"#{t}" for t in en_tags)
+```
+
 ## 上传命令
 
 ```bash
 SKILL_DIR="$HOME/.claude/skills/tiktok-upload"
 DISPLAY=:0 python3 "$SKILL_DIR/scripts/upload.py" \
   --file      "<视频文件路径>" \
-  --description "<描述文字 #tag1 #tag2>" \
+  --description "<en_title> #tag1 #tag2 #tag3" \
   --cookies   "$SKILL_DIR/cookies.txt"
 ```
 
@@ -31,7 +41,7 @@ DISPLAY=:0 python3 "$SKILL_DIR/scripts/upload.py" \
 | 参数 | 必填 | 默认值 | 说明 |
 |------|------|--------|------|
 | `--file` | 是 | — | 视频文件路径 |
-| `--description` | 是 | — | 描述文字，直接包含 `#tag`，不需要单独传 tags |
+| `--description` | 是 | — | **英文**描述文字，直接包含 `#tag`，不需要单独传 tags |
 | `--cookies` | 否 | `$SKILL_DIR/cookies.txt` | cookies 文件路径（skill 目录内已内置） |
 | `--max-retries` | 否 | `2` | 每种模式的最大重试次数 |
 
@@ -56,25 +66,31 @@ DISPLAY=:0 python3 "$SKILL_DIR/scripts/upload.py" \
 - `cookies.txt` 为 Netscape 格式，通过浏览器插件导出
 - WSL 环境需要有 `DISPLAY=:0`（有头模式必须）
 
-## 账号信息（workspace/zhaili/platform_config.json）
+## 账号信息（workspace/\<username\>/platform_config.json）
 
 ```json
 "tiktok": {
-  "unique_id": "loner_968",
-  "sec_uid": "MS4wLjABAAAAxNn1Nu4UtZPa-H962KUghGEmuI6KrP9dlrIef79Qopm2CV8h4DKS7jqzfszurNeZ"
+  "unique_id": "<tiktok_username>",
+  "sec_uid": "<sec_uid>"
 }
 ```
+
+`sec_uid` 从 TikTok 个人主页 URL 或浏览器 Network 请求中获取。
 
 ## 发布后验证
 
 ```python
 from tikhub import TikHub
-import os
+import json, os
+from pathlib import Path
 from dotenv import load_dotenv
 load_dotenv()
 
+username = "<username>"
+cfg = json.loads((Path("workspace") / username / "platform_config.json").read_text())
+sec_uid = cfg["tiktok"]["sec_uid"]
+
 client = TikHub(api_key=os.environ['TIKHUB_API_TOKEN'])
-sec_uid = "MS4wLjABAAAAxNn1Nu4UtZPa-H962KUghGEmuI6KrP9dlrIef79Qopm2CV8h4DKS7jqzfszurNeZ"
 r = client.tiktok_web.fetch_user_post(secUid=sec_uid, count=3)
 items = r.get('data', {}).get('itemList', [])
 for item in items:

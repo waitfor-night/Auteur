@@ -453,6 +453,51 @@ class VideoAssistant:
             print(f"[VLM 判断] 调用失败: {e}，默认判断为需要修改", flush=True)
             return True
 
+    def _generate_en_meta(self, task_description: str, result_video: str) -> tuple[str, list[str]]:
+        """Generate English title and tags for TikTok / YouTube."""
+        from openai import OpenAI
+        client = OpenAI(
+            base_url="https://ark.cn-beijing.volces.com/api/v3",
+            api_key=os.environ.get("ARK_API_KEY"),
+        )
+        prompt = f"""You are a social media expert. Based on the video task description below, generate publishing metadata for English-speaking platforms (TikTok, YouTube).
+
+Task description: {task_description}
+Video filename: {result_video or '(unknown)'}
+
+Return JSON only (no extra text):
+{{
+  "title": "Engaging English title (5-10 words, no emoji)",
+  "tags": ["tag1", "tag2", "tag3", "tag4", "tag5"]
+}}
+
+Requirements:
+- Title must be in English, concise and attention-grabbing
+- Tags must be in English, 3-6 items, no # prefix
+- Do NOT use any Chinese characters"""
+        try:
+            response = client.chat.completions.create(
+                model="doubao-1-5-pro-32k-250115",
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=200,
+                temperature=0.7,
+            )
+            import json as _json
+            text = response.choices[0].message.content.strip()
+            if text.startswith("```"):
+                text = text.split("```")[1]
+                if text.startswith("json"):
+                    text = text[4:]
+            data = _json.loads(text.strip())
+            title = data.get("title", "")
+            tags = data.get("tags", [])
+            print(f"[EN Meta] title: {title}", flush=True)
+            print(f"[EN Meta] tags: {tags}", flush=True)
+            return title, tags
+        except Exception as e:
+            print(f"[EN Meta] generation failed: {e}, returning empty", flush=True)
+            return "", []
+
     def _generate_xhs_meta(self, task_description: str, result_video: str) -> tuple[str, list[str]]:
         """根据任务描述自动生成小红书标题与话题标签。
 
@@ -796,8 +841,9 @@ class VideoAssistant:
             if not result_video:
                 result_video = _fallback_video
 
-        # 生成 XHS 发布元数据（title + tags）
+        # 生成发布元数据：中文（小红书/抖音等）+ 英文（TikTok/YouTube）
         xhs_title, xhs_tags = self._generate_xhs_meta(self.user_input, result_video)
+        en_title, en_tags = self._generate_en_meta(self.user_input, result_video)
 
         self.result = {
             "success": True,
@@ -807,6 +853,8 @@ class VideoAssistant:
             "result_video": result_video,
             "xhs_title": xhs_title,
             "xhs_tags": xhs_tags,
+            "en_title": en_title,
+            "en_tags": en_tags,
             "context_id": self.context.context_id,
             "total_rounds": self.current_round,
             "duration_sec": total_elapsed,
