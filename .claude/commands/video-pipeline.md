@@ -11,7 +11,7 @@
 
 sau 账号命名规律：`<username>-douyin`、`<username>-bilibili`、`<username>-kuaishou`（如 username=test，则账号为 test-douyin）。
 
-sau CLI 路径：`/home/shuyun/work/multi-shot-multi-object-long-video-edit/.venv/bin/sau`（下文 `sau` 均指此路径）。
+sau CLI 路径：优先用 `command -v sau` 动态查找，找不到则退回 `$(python3 -c "import sys,pathlib; print(pathlib.Path(sys.executable).parent/'sau')")`（下文 `$SAU` 均指此路径）。
 
 ---
 
@@ -139,80 +139,101 @@ with open('/tmp/va_result.json', 'w') as f:
 print(json.dumps(result, ensure_ascii=False))
 ```
 
-记录 `trace_id`、`trace_path`、`result_video`（若为空，从 output_dir 下查找实际 mp4 路径）、`xhs_title`、`xhs_tags`。
+记录 `trace_id`、`trace_path`、`result_video`（若为空，从 output_dir 下查找实际 mp4 路径）、`xhs_title`、`xhs_tags`、`en_title`、`en_tags`。
 
 ---
 
-## Step 3 — 发布到小红书（MCP）
+## Step 3 — 发布到抖音 / Bilibili / 快手（sau CLI）
 
-```bash
-python3 utils/xhs_publish.py auto-publish \
-    --username <username> \
-    --result-json-str "$(cat /tmp/va_result.json)"
-```
+> 小红书账号已封禁，不再发布。
 
-记录输出 JSON 中的 `trace_id`、`trace_path`、`result_video`、`title`、`tags`（列表）、`post_id`、`xsec_token`。
-
-若发布失败（exit != 0），标记 `XHS_SUCCESS=false`，继续执行 Step 4（其他平台不受影响）。
-若成功，标记 `XHS_SUCCESS=true`。
-
----
-
-## Step 4 — 发布到抖音 / Bilibili / 快手（sau CLI）
+sau CLI 路径：优先用 `command -v sau` 动态查找（见下方 `$SAU` 定义）。
 
 依次执行以下命令，记录每个平台退出码（0 = 成功）：
 
 ```bash
-# 抖音（标题限 30 字）
-/home/shuyun/work/multi-shot-multi-object-long-video-edit/.venv/bin/sau douyin upload-video \
+SAU=$(command -v sau 2>/dev/null || python3 -c "import sys,pathlib; print(pathlib.Path(sys.executable).parent/'sau')")
+
+# 抖音（标题限 30 字，有头模式）
+DISPLAY=:0 $SAU douyin upload-video \
     --account <username>-douyin \
-    --file "<Step3.result_video>" \
-    --title "<Step3.title 前30字>" \
-    --tags "<Step3.tags 逗号分隔>" 2>&1
+    --file "<Step2.result_video>" \
+    --title "<Step2.xhs_title 前30字>" \
+    --tags "<Step2.xhs_tags 逗号分隔>" \
+    --headed 2>&1
 echo "DOUYIN_EXIT:$?"
 
 # Bilibili（标题限 80 字，tid=25 为生活区）
-/home/shuyun/work/multi-shot-multi-object-long-video-edit/.venv/bin/sau bilibili upload-video \
+$SAU bilibili upload-video \
     --account <username>-bilibili \
-    --file "<Step3.result_video>" \
-    --title "<Step3.title 前80字>" \
-    --desc "<Step3.title 前80字>" \
-    --tags "<Step3.tags 逗号分隔>" \
+    --file "<Step2.result_video>" \
+    --title "<Step2.xhs_title 前80字>" \
+    --desc "<Step2.xhs_title 前80字>" \
+    --tags "<Step2.xhs_tags 逗号分隔>" \
     --tid 25 2>&1
 echo "BILIBILI_EXIT:$?"
 
 # 快手（标题限 30 字）
-/home/shuyun/work/multi-shot-multi-object-long-video-edit/.venv/bin/sau kuaishou upload-video \
+$SAU kuaishou upload-video \
     --account <username>-kuaishou \
-    --file "<Step3.result_video>" \
-    --title "<Step3.title 前30字>" \
-    --tags "<Step3.tags 逗号分隔>" 2>&1
+    --file "<Step2.result_video>" \
+    --title "<Step2.xhs_title 前30字>" \
+    --tags "<Step2.xhs_tags 逗号分隔>" 2>&1
 echo "KUAISHOU_EXIT:$?"
 ```
 
 **仅将退出码为 0 的平台加入 `SUCCEEDED_PLATFORMS` 列表。**
-小红书若 `XHS_SUCCESS=true`，也加入列表（格式：`xiaohongshu:<username>-xiaohongshu`）。
 
 ---
 
-## Step 5 — 写入多平台发布日志
+## Step 3.5 — 发布到 TikTok / YouTube（英文标题）
 
-**仅记录 Step 3/4 中发布成功的平台**，格式为 `platform:account`：
+TikTok 和 YouTube 使用 `en_title`/`en_tags`（英文），不用中文标题。
+
+```bash
+PYTHON3=$(command -v python3 2>/dev/null || echo python3)
+
+# TikTok
+DISPLAY=:0 $PYTHON3 \
+    docs/skills/tiktok-upload/scripts/upload.py \
+    --file "<Step2.result_video>" \
+    --description "<Step2.en_title> $(echo <Step2.en_tags> | sed 's/,/ #/g' | sed 's/^/#/')" \
+    --cookies "cookies.txt" 2>&1
+echo "TIKTOK_EXIT:$?"
+
+# YouTube
+$PYTHON3 ytcli/upload.py \
+    --file "<Step2.result_video>" \
+    --title "<Step2.en_title>" \
+    --description "<Step2.en_title>" \
+    --tags "<Step2.en_tags 逗号分隔>" \
+    --category 22 \
+    --privacy public 2>&1
+echo "YOUTUBE_EXIT:$?"
+```
+
+成功的平台加入 `SUCCEEDED_PLATFORMS`。
+
+---
+
+## Step 4 — 写入多平台发布日志
+
+**仅记录发布成功的平台**，格式为 `platform:account`：
 
 ```bash
 python3 utils/publish_record_v2.py record \
     --username <username> \
-    --trace-id "<Step3.trace_id>" \
-    --trace-path "<Step3.trace_path>" \
-    --result-video "<Step3.result_video>" \
-    --title "<Step3.title>" \
-    --tags <Step3.tags 空格分隔> \
+    --trace-id "<Step2.trace_id>" \
+    --trace-path "<Step2.trace_path>" \
+    --result-video "<Step2.result_video>" \
+    --title "<Step2.xhs_title>" \
+    --tags <Step2.xhs_tags 空格分隔> \
     --platforms <SUCCEEDED_PLATFORMS 空格分隔>
 ```
 
-示例（抖音和小红书成功，B站和快手失败）：
+示例（抖音、B站、TikTok、YouTube 成功）：
 ```bash
-    --platforms douyin:<username>-douyin xiaohongshu:<username>-xiaohongshu
+    --platforms douyin:<username>-douyin bilibili:<username>-bilibili tiktok:<username>-tiktok youtube:<username>-youtube
 ```
 
 > 失败的平台不传入 `--platforms`，后续可用 `publish_record_v2.py retry-publish` 重试。
