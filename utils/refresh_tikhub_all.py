@@ -207,6 +207,7 @@ _DISCOVER_FN = {
     "douyin":   (_discover_douyin_user_id,  "sec_user_id"),
     "bilibili": (_discover_bilibili_uid,    "uid"),
     "kuaishou": (_discover_kuaishou_user_id, "user_id"),
+    # TikTok / YouTube 直接从 platform_config.json 读取，无需自动发现
 }
 
 
@@ -219,6 +220,12 @@ def _ensure_user_id(username: str, client, platform: str, config: dict) -> str:
             if xhs_cfg.exists():
                 uid = json.loads(xhs_cfg.read_text(encoding="utf-8")).get("xhs_user_id", "")
         return uid
+
+    if platform == "tiktok":
+        return config.get("tiktok", {}).get("sec_uid", "")
+
+    if platform == "youtube":
+        return config.get("youtube", {}).get("channel_id", "")
 
     discover_fn, cfg_key = _DISCOVER_FN[platform]
     uid = config.get(platform, {}).get(cfg_key, "")
@@ -245,7 +252,7 @@ def _ensure_user_id(username: str, client, platform: str, config: dict) -> str:
 # 小红书
 # ──────────────────────────────────────────────
 
-def _xhs_fetch_user_posts(client, user_id: str) -> list[dict]:
+def _xhs_fetch_user_posts(client, user_id: str, username: str = "") -> list[dict]:
     notes, cursor = [], ""
     for _ in range(10):
         try:
@@ -425,7 +432,7 @@ def _douyin_fetch_comments(client, aweme_id: str) -> list[dict]:
 # Bilibili
 # ──────────────────────────────────────────────
 
-def _bilibili_fetch_user_posts(client, uid: str) -> list[dict]:
+def _bilibili_fetch_user_posts(client, uid: str, username: str = "") -> list[dict]:
     posts, pn = [], 1
     for _ in range(5):
         try:
@@ -494,7 +501,7 @@ def _bilibili_fetch_comments(client, bvid: str) -> list[dict]:
 # 快手
 # ──────────────────────────────────────────────
 
-def _kuaishou_fetch_user_posts(client, user_id: str) -> list[dict]:
+def _kuaishou_fetch_user_posts(client, user_id: str, username: str = "") -> list[dict]:
     posts = []
     try:
         resp = client.kuaishou_app.fetch_user_hot_post(user_id=user_id)
@@ -583,6 +590,104 @@ def _kuaishou_fetch_comments(client, photo_id: str) -> list[dict]:
 
 
 # ──────────────────────────────────────────────
+# TikTok
+# ──────────────────────────────────────────────
+
+def _tiktok_fetch_user_posts(client, sec_uid: str, username: str = "") -> list[dict]:
+    posts = []
+    try:
+        resp = client.tiktok_web.fetch_user_post(secUid=sec_uid, count=20)
+        data = resp if isinstance(resp, dict) else {}
+        items = data.get("data", {}).get("itemList", []) or data.get("itemList", [])
+        for item in items:
+            posts.append({
+                "post_id": item.get("id", ""),
+                "title": item.get("desc", ""),
+            })
+    except Exception as e:
+        print(f"[tiktok] fetch_user_post 异常：{e}", file=sys.stderr)
+    return posts
+
+
+def _tiktok_fetch_stats(client, post_id: str) -> Optional[dict]:
+    try:
+        resp = client.tiktok_web.fetch_post_detail(itemId=post_id)
+        data = resp if isinstance(resp, dict) else {}
+        item = data.get("data", {}).get("itemInfo", {}).get("itemStruct", {}) or data.get("itemStruct", {})
+        s = item.get("stats", {})
+        return {
+            "liked_count":     int(s.get("diggCount", 0) or 0),
+            "collected_count": int(s.get("collectCount", 0) or 0),
+            "comment_count":   int(s.get("commentCount", 0) or 0),
+            "share_count":     int(s.get("shareCount", 0) or 0),
+            "view_count":      int(s.get("playCount", 0) or 0),
+        }
+    except Exception as e:
+        print(f"[tiktok] fetch_post_detail 异常：{e}", file=sys.stderr)
+        return None
+
+
+def _tiktok_fetch_comments(client, post_id: str) -> list[dict]:
+    comments = []
+    try:
+        resp = client.tiktok_web.fetch_post_comment(itemId=post_id, count=20)
+        data = resp if isinstance(resp, dict) else {}
+        for raw in data.get("data", {}).get("comments", []) or data.get("comments", []):
+            comments.append({
+                "comment_id": raw.get("id", ""),
+                "content": raw.get("text", ""),
+                "author": raw.get("user", {}).get("uniqueId", ""),
+                "like_count": int(raw.get("diggCount", 0) or 0),
+                "sub_comments": [],
+            })
+    except Exception as e:
+        print(f"[tiktok] fetch_post_comment 异常：{e}", file=sys.stderr)
+    return comments
+
+
+# ──────────────────────────────────────────────
+# YouTube
+# ──────────────────────────────────────────────
+
+def _youtube_fetch_user_posts(client, channel_id: str, username: str = "") -> list[dict]:
+    posts = []
+    try:
+        resp = client.youtube_web.get_channel_videos(channel_id=channel_id)
+        data = resp if isinstance(resp, dict) else {}
+        items = data.get("data", {}).get("videos", []) or data.get("videos", [])
+        for item in items:
+            posts.append({
+                "post_id": item.get("id", ""),
+                "title": item.get("title", ""),
+            })
+    except Exception as e:
+        print(f"[youtube] get_channel_videos 异常：{e}", file=sys.stderr)
+    return posts
+
+
+def _youtube_fetch_stats(client, video_id: str) -> Optional[dict]:
+    try:
+        resp = client.youtube_web.get_video_info(video_id=video_id)
+        data = resp if isinstance(resp, dict) else {}
+        item = data.get("data", {})
+        return {
+            "liked_count":     int(item.get("likeCount", 0) or 0),
+            "collected_count": 0,
+            "comment_count":   int(item.get("commentCount", 0) or 0),
+            "share_count":     0,
+            "view_count":      int(item.get("viewCount", 0) or 0),
+        }
+    except Exception as e:
+        print(f"[youtube] get_video_info 异常：{e}", file=sys.stderr)
+        return None
+
+
+def _youtube_fetch_comments(_client, _video_id: str) -> list[dict]:
+    # TikHub YouTube comments API 需要额外 token，暂返回空列表
+    return []
+
+
+# ──────────────────────────────────────────────
 # 平台统一接口表
 # ──────────────────────────────────────────────
 
@@ -609,6 +714,18 @@ _PLATFORM_HANDLERS: dict[str, dict] = {
         "fetch_user_posts": _kuaishou_fetch_user_posts,
         "fetch_stats":      _kuaishou_fetch_stats_direct,
         "fetch_comments":   _kuaishou_fetch_comments,
+        "kuaishou_list_stats": False,
+    },
+    "tiktok": {
+        "fetch_user_posts": _tiktok_fetch_user_posts,
+        "fetch_stats":      _tiktok_fetch_stats,
+        "fetch_comments":   _tiktok_fetch_comments,
+        "kuaishou_list_stats": False,
+    },
+    "youtube": {
+        "fetch_user_posts": _youtube_fetch_user_posts,
+        "fetch_stats":      _youtube_fetch_stats,
+        "fetch_comments":   _youtube_fetch_comments,
         "kuaishou_list_stats": False,
     },
 }
@@ -746,7 +863,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="TikHub 多平台指标刷新（全自动）")
     parser.add_argument("--username", required=True)
     parser.add_argument("--platform", nargs="*",
-                        help="指定平台（不填则全部）：xiaohongshu douyin bilibili kuaishou")
+                        help="指定平台（不填则全部）：xiaohongshu douyin bilibili kuaishou tiktok youtube")
     parser.add_argument("--backfill-only", action="store_true", help="仅补全 post_id")
     parser.add_argument("--refresh-only",  action="store_true", help="仅刷新指标")
     parser.add_argument("--delay", type=float, default=_DELAY)
