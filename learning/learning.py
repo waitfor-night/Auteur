@@ -1,23 +1,25 @@
 #!/usr/bin/env python3
 """
-同时优化 meta-skill 和用户 memory。
+Prism-Trace Learning：从 ep_*.json 经三视图分解，分别优化 meta-skill / memory / content_strategy。
 
-用法示例：
+用法：
     python -m learning.learning \\
         --meta_skill skills/SKILL_doc_rigorous.md \\
         --username doc_rigorous \\
-        --trace workspace/doc_rigorous/context \\
+        --ep_dir workspace/test/train_test \\
         --engine kimi-k2-turbo-preview
 
-meta-skill 输出默认覆盖 --meta_skill；memory 路径默认从 --username 推导为
-workspace/<username>/memory/memory.md。均可通过 --meta_skill_output /
---memory_output 显式指定。
+三视图对应关系：
+    execution_view   → ExecutionLoss        → meta-skill（每条 ep 均参与）
+    preference_view  → PreferenceLoss       → memory.md（仅沙盒模式 ep，有 feedback/satisfied）
+    audience_view    → ContentStrategyLoss  → content_strategy.md（仅自动运营 ep，有社媒数据）
 
-用 --skip_meta_skill 或 --skip_memory 可跳过其中一个优化步骤。
+各优化器独立积累梯度；某视图在所有 ep 均为 None 时，跳过对应 step。
 """
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from pathlib import Path
 
@@ -25,45 +27,14 @@ _ROOT = Path(__file__).resolve().parent.parent
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
-import json
-
 import textgrad as tg
 
-from utils.trajectory_io import load_traces_from_json, enrich_with_publish_feedback
-from utils.xhs_log_io import get_entry_by_timestamp
-from learning.common import resolve_trace_paths
+from learning.prism_trace import decompose, PrismTrace
 from learning.tgd_engine import get_engine_from_builtin
 from learning.optimization.execution_loss import ExecutionLoss
 from learning.optimization.preference_loss import PreferenceLoss
-
-
-_MEMORY_TEMPLATE = """\
-# 用户偏好
-
-# 任务与成片习惯
-
-# 交互纠偏摘要
-"""
-
-
-def _ensure_memory(memory_path: Path) -> None:
-    """若 memory.md 不存在则用三章节模板初始化。"""
-    memory_path.parent.mkdir(parents=True, exist_ok=True)
-    if not memory_path.is_file():
-        memory_path.write_text(_MEMORY_TEMPLATE, encoding="utf-8")
-
-
-def _filter_paths_by_username(paths: list, username: str) -> list:
-    """保留 ctx*.json 中 username 字段匹配的文件。"""
-    kept = []
-    for p in paths:
-        try:
-            data = json.loads(Path(p).read_text(encoding="utf-8"))
-            if data.get("username") == username:
-                kept.append(p)
-        except Exception:
-            pass
-    return kept
+from learning.optimization.content_strategy_loss import ContentStrategyLoss
+from utils.user_workspace import ensure_user_memory, ensure_content_strategy
 
 
 def _strip_md_fence(text: str) -> str:
@@ -78,65 +49,60 @@ def _strip_md_fence(text: str) -> str:
     return out
 
 
+def _opt_path(src: Path) -> Path:
+    """foo/BAR.md → foo/BAR_opt.md"""
+    return src.with_stem(src.stem + "_opt")
+
+
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(
-        description="同时优化 meta-skill 和用户 memory（单次 TGD step，多条轨迹聚合梯度）。",
+        description="Prism-Trace Learning：ep_*.json → 三视图 → 优化 meta-skill / memory / content_strategy。",
     )
-    p.add_argument(
-        "--meta_skill",
-        required=True,
-        help="meta-skill MD 文件路径（如 skills/SKILL_doc_rigorous.md）。",
-    )
-    p.add_argument(
-        "--username",
-        default=None,
-        help="用户名；memory 路径自动推导为 workspace/<username>/memory/memory.md，"
-             "同时过滤 ctx*.json 中 username 字段不匹配的文件。与 --memory 二选一，--memory 优先。",
-    )
-    p.add_argument(
-        "--memory",
-        default=None,
-        help="显式指定 memory.md 路径，优先于 --username 推导。",
-    )
-    p.add_argument(
-        "--trace",
-        nargs="+",
-        required=True,
-        metavar="FILE_OR_DIR",
-        help="ctx*.json 文件或目录（目录则递归收集）。",
-    )
-    p.add_argument(
-        "--meta_skill_output",
-        default=None,
-        help="优化后 meta-skill 写入路径。默认覆盖 --meta_skill。",
-    )
-    p.add_argument(
-        "--memory_output",
-        default=None,
-        help="优化后 memory 写入路径。默认覆盖读取的 memory.md。",
-    )
-    p.add_argument(
-        "--engine",
-        default="kimi-k2-turbo-preview",
-        help="LLM engine 名称（内置：doubao-seed-2-0-pro-260215 / deepseek-chat / kimi-k2-turbo-preview）。",
-    )
-    p.add_argument(
-        "--skip_meta_skill",
-        action="store_true",
-        help="跳过 meta-skill 优化，只更新 memory。",
-    )
-    p.add_argument(
-        "--skip_memory",
-        action="store_true",
-        help="跳过 memory 更新，只优化 meta-skill。",
-    )
+    p.add_argument("--meta_skill", required=True,
+                   help="meta-skill MD 文件路径（如 skills/SKILL_doc_rigorous.md）。")
+    p.add_argument("--username", default=None,
+                   help="用户名；memory / content_strategy 路径自动推导为 workspace/<username>/…。")
+    p.add_argument("--memory", default=None,
+                   help="显式指定 memory.md 路径，优先于 --username 推导。")
+    p.add_argument("--content_strategy", default=None,
+                   help="显式指定 content_strategy.md 路径，优先于 --username 推导。")
+    p.add_argument("--ep_dir", default=None,
+                   help="包含 ep_*.json 的目录（递归收集）。与 --ep 二选一。")
+    p.add_argument("--ep", nargs="+", default=None, metavar="FILE",
+                   help="显式指定 ep_*.json 文件列表。与 --ep_dir 二选一。")
+    p.add_argument("--meta_skill_output", default=None,
+                   help="优化后 meta-skill 写入路径；默认输出到同目录下 <stem>_opt.md。")
+    p.add_argument("--memory_output", default=None,
+                   help="优化后 memory 写入路径；默认输出到同目录下 <stem>_opt.md。")
+    p.add_argument("--content_strategy_output", default=None,
+                   help="优化后 content_strategy 写入路径；默认输出到同目录下 <stem>_opt.md。")
+    p.add_argument("--engine", default="kimi-k2-turbo-preview",
+                   help="LLM engine（内置：doubao-seed-2-0-pro-260215 / deepseek-chat / kimi-k2-turbo-preview）。")
+    p.add_argument("--skip_meta_skill", action="store_true", help="跳过 meta-skill 优化。")
+    p.add_argument("--skip_memory", action="store_true", help="跳过 memory 更新。")
+    p.add_argument("--skip_content_strategy", action="store_true", help="跳过 content_strategy 更新。")
     return p.parse_args()
+
+
+def _collect_ep_paths(ep_dir: str | None, ep: list | None) -> list[Path]:
+    if ep_dir and ep:
+        raise SystemExit("--ep_dir 和 --ep 不能同时使用。")
+    if ep_dir:
+        paths = sorted(Path(ep_dir).rglob("ep_*.json"))
+    elif ep:
+        paths = [Path(f) for f in ep]
+    else:
+        raise SystemExit("--ep_dir 或 --ep 至少提供一个。")
+    missing = [str(p) for p in paths if not p.is_file()]
+    if missing:
+        raise SystemExit(f"以下文件不存在：{missing}")
+    return paths
 
 
 def main() -> None:
     args = parse_args()
 
-    # ── 路径校验 ──────────────────────────────────────────────────
+    # ── 路径校验 ──────────────────────────────────────────────────────────
     meta_path = Path(args.meta_skill)
     if not meta_path.is_file():
         raise SystemExit(f"Meta-skill file not found: {meta_path}")
@@ -146,96 +112,144 @@ def main() -> None:
         if args.memory:
             memory_path = Path(args.memory)
         elif args.username:
-            memory_path = _ROOT / "workspace" / args.username.strip() / "memory" / "memory.md"
+            memory_path = ensure_user_memory(_ROOT, args.username)
         else:
             raise SystemExit("--memory 或 --username 至少提供一个（或使用 --skip_memory 跳过）。")
-        _ensure_memory(memory_path)
 
-    try:
-        trace_paths = resolve_trace_paths(args.trace)
-    except FileNotFoundError as e:
-        raise SystemExit(str(e))
-    if not trace_paths:
-        raise SystemExit("未找到任何 ctx*.json 文件，请检查 --trace 路径。")
+    cs_path: Path | None = None
+    if not args.skip_content_strategy:
+        if args.content_strategy:
+            cs_path = Path(args.content_strategy)
+        elif args.username:
+            cs_path = ensure_content_strategy(_ROOT, args.username)
+        else:
+            raise SystemExit("--content_strategy 或 --username 至少提供一个（或使用 --skip_content_strategy 跳过）。")
 
-    # ── 按 username 过滤轨迹文件（文件内容中的 username 字段） ────────
+    # ── 收集 ep_*.json ────────────────────────────────────────────────────
+    ep_paths = _collect_ep_paths(args.ep_dir, args.ep)
+    if not ep_paths:
+        raise SystemExit("未找到任何 ep_*.json 文件，请检查 --ep_dir / --ep 路径。")
+
+    # ── Prism-Trace 分解 ──────────────────────────────────────────────────
+    # ep 原始数据保留，用于 username 过滤
+    ep_records: list[tuple[dict, PrismTrace]] = []
+    for p in ep_paths:
+        ep = json.loads(p.read_text(encoding="utf-8"))
+        ep_records.append((ep, decompose(ep)))
+
+    all_traces   = [t for _, t in ep_records]
+    # memory / content_strategy 只用 username 匹配的 ep（per-user 文档）
+    # meta-skill 使用全部 ep（跨用户信号有益于通用编排规则优化）
     if args.username:
-        before = len(trace_paths)
-        trace_paths = _filter_paths_by_username(trace_paths, args.username)
-        print(f"[learning] username 过滤: {before} → {len(trace_paths)} 条 ctx 文件", flush=True)
-        if not trace_paths:
-            raise SystemExit(f"过滤后无匹配 username={args.username!r} 的轨迹文件。")
+        user_traces = [t for ep, t in ep_records if ep.get("username") == args.username]
+        filtered = len(all_traces) - len(user_traces)
+        if filtered:
+            print(f"[learning] username={args.username!r} 过滤：{filtered} 条 ep 不参与 memory/cs 优化", flush=True)
+    else:
+        user_traces = all_traces
 
-    # ── 加载轨迹（两个优化步骤共用） ────────────────────────────────
-    trajectories = load_traces_from_json([str(p) for p in trace_paths])
-    if not trajectories:
-        raise SystemExit("轨迹加载失败，请检查 ctx*.json 内容。")
-    print(f"[learning] 已加载 {len(trajectories)} 条轨迹", flush=True)
+    n_pref = sum(1 for t in user_traces if t.preference_view)
+    n_aud  = sum(1 for t in user_traces if t.audience_view)
+    print(
+        f"[learning] 共 {len(all_traces)} ep（meta-skill 全用）| "
+        f"username ep={len(user_traces)} preference={n_pref} audience={n_aud}",
+        flush=True,
+    )
 
-    # ── 注入 publish_log 真实用户反馈（若有） ──────────────────────
-    if args.username:
-        enriched = 0
-        new_trajectories = []
-        for (traj_text, num_rounds), path in zip(trajectories, trace_paths):
-            # ctx_<timestamp>_<hash>.json → 提取 timestamp
-            ts = Path(path).stem.split("_")[1] if "_" in Path(path).stem else ""
-            entry = get_entry_by_timestamp(args.username, ts) if ts else None
-            if entry:
-                traj_text = enrich_with_publish_feedback(traj_text, entry)
-                enriched += 1
-            new_trajectories.append((traj_text, num_rounds))
-        #新列表
-        trajectories = new_trajectories
-        if enriched:
-            print(f"[learning] 已注入 {enriched} 条 publish_log 真实反馈", flush=True)
-
-    # ── 初始化 engine ─────────────────────────────────────────────
+    # ── 初始化 engine ─────────────────────────────────────────────────────
     engine = get_engine_from_builtin(args.engine)
     if engine is not None:
         tg.set_backward_engine(engine, override=True)
     else:
         tg.set_backward_engine(args.engine, override=True)
 
-    # ── Step 1：优化 meta-skill ───────────────────────────────────
-    if not args.skip_meta_skill:
-        print("[learning] 开始优化 meta-skill ...", flush=True)
-        meta_skill = tg.Variable(
+    # ── TGD Variables ─────────────────────────────────────────────────────
+    meta_var = (
+        tg.Variable(
             meta_path.read_text(encoding="utf-8"),
             requires_grad=True,
-            role_description="meta-skill document for the Planner agent, guide the agent to generate the video execution plan",
+            role_description="meta-skill document for the Planner agent, guides video execution plan generation",
         )
-        meta_optimizer = tg.TGD(parameters=[meta_skill], engine=engine if engine is not None else None)
-        for trajectory_text, num_rounds in trajectories:
-            loss = ExecutionLoss(trajectory_text=trajectory_text, num_rounds=num_rounds)(meta_skill)
-            loss.backward()
-        meta_optimizer.step()
-
-        meta_out = Path(args.meta_skill_output) if args.meta_skill_output else meta_path
-        meta_out.parent.mkdir(parents=True, exist_ok=True)
-        meta_out.write_text(meta_skill.value, encoding="utf-8")
-        print(f"[learning] meta-skill 已写入: {meta_out}", flush=True)
-
-    # ── Step 2：更新 memory ──────────────────────────────────────
-    if not args.skip_memory:
-        print("[learning] 开始更新 memory ...", flush=True)
-        user_memory = tg.Variable(
+        if not args.skip_meta_skill else None
+    )
+    mem_var = (
+        tg.Variable(
             memory_path.read_text(encoding="utf-8"),
             requires_grad=True,
-            role_description="user memory document: preferences, task/video habits, and interaction correction summaries (three top-level sections)",
+            role_description="user memory: preferences, task/video habits, and interaction correction summaries",
         )
-        mem_optimizer = tg.TGD(parameters=[user_memory], engine=engine if engine is not None else None)
-        for trajectory_text, num_rounds in trajectories:
-            loss = PreferenceLoss(trajectory_text=trajectory_text, num_rounds=num_rounds)(user_memory)
-            loss.backward()
-        mem_optimizer.step()
+        if (not args.skip_memory and memory_path) else None
+    )
+    cs_var = (
+        tg.Variable(
+            cs_path.read_text(encoding="utf-8"),
+            requires_grad=True,
+            role_description="content strategy: what kind of content performs well for this account on social media",
+        )
+        if (not args.skip_content_strategy and cs_path) else None
+    )
 
-        mem_content = _strip_md_fence(user_memory.value)
-        if not mem_content:
-            raise SystemExit("TGD 返回空 memory，已中止写入。")
-        mem_out = Path(args.memory_output) if args.memory_output else memory_path
-        mem_out.parent.mkdir(parents=True, exist_ok=True)
-        mem_out.write_text(mem_content + "\n", encoding="utf-8")
-        print(f"[learning] memory 已写入: {mem_out}", flush=True)
+    # ── Optimizers ────────────────────────────────────────────────────────
+    eng_kwarg = {"engine": engine} if engine is not None else {}
+    meta_opt = tg.TGD(parameters=[meta_var], **eng_kwarg) if meta_var else None
+    mem_opt  = tg.TGD(parameters=[mem_var],  **eng_kwarg) if mem_var  else None
+    cs_opt   = tg.TGD(parameters=[cs_var],   **eng_kwarg) if cs_var   else None
+
+    # ── 三视图 backward ───────────────────────────────────────────────────
+    # execution：全部 ep，跨用户信号均有益于 meta-skill 优化
+    if meta_var:
+        for trace in all_traces:
+            ExecutionLoss(
+                trajectory_text=trace.execution_view,
+                num_rounds=trace.num_rounds,
+            )(meta_var).backward()
+
+    # preference / audience：只用 username 匹配的 ep（per-user 文档）
+    for trace in user_traces:
+        if mem_var and trace.preference_view:
+            PreferenceLoss(
+                trajectory_text=trace.preference_view,
+                num_rounds=trace.num_rounds,
+            )(mem_var).backward()
+
+        if cs_var and trace.audience_view:
+            ContentStrategyLoss(
+                audience_view=trace.audience_view,
+            )(cs_var).backward()
+
+    # ── Step + 写出 ───────────────────────────────────────────────────────
+    if meta_opt:
+        meta_opt.step()
+        meta_out = Path(args.meta_skill_output) if args.meta_skill_output else _opt_path(meta_path)
+        meta_out.parent.mkdir(parents=True, exist_ok=True)
+        meta_out.write_text(meta_var.value, encoding="utf-8")
+        print(f"[learning] meta-skill → {meta_out}", flush=True)
+
+    if mem_opt:
+        if n_pref > 0:
+            mem_opt.step()
+            content = _strip_md_fence(mem_var.value)
+            if not content:
+                raise SystemExit("TGD 返回空 memory，已中止写入。")
+            mem_out = Path(args.memory_output) if args.memory_output else _opt_path(memory_path)
+            mem_out.parent.mkdir(parents=True, exist_ok=True)
+            mem_out.write_text(content + "\n", encoding="utf-8")
+            print(f"[learning] memory → {mem_out}", flush=True)
+        else:
+            print("[learning] 无 preference_view，跳过 memory step。", flush=True)
+
+    if cs_opt:
+        if n_aud > 0:
+            cs_opt.step()
+            content = _strip_md_fence(cs_var.value)
+            if not content:
+                raise SystemExit("TGD 返回空 content_strategy，已中止写入。")
+            cs_out = Path(args.content_strategy_output) if args.content_strategy_output else _opt_path(cs_path)
+            cs_out.parent.mkdir(parents=True, exist_ok=True)
+            cs_out.write_text(content + "\n", encoding="utf-8")
+            print(f"[learning] content_strategy → {cs_out}", flush=True)
+        else:
+            print("[learning] 无 audience_view，跳过 content_strategy step。", flush=True)
 
 
 if __name__ == "__main__":
